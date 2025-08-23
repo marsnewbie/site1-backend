@@ -1,8 +1,8 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import fs from 'fs';
-import path from 'path';
 import { fileURLToPath } from 'url';
+import { supabase } from './lib/supabase.js';
+import { emailService } from './lib/email.js';
 import { quoteDelivery } from './services/delivery.js';
 
 // Create Fastify instance
@@ -15,10 +15,6 @@ await app.register(cors, { origin: '*' });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load menu seed once
-const menuPath = path.join(__dirname, '..', 'seed', 'menu.sample.json');
-const menuData = JSON.parse(fs.readFileSync(menuPath, 'utf-8'));
-
 // Simple in-memory cart store (dev only)
 const carts = {};
 
@@ -27,21 +23,39 @@ app.get('/health', async () => ({ ok: true }));
 
 // GET /api/menu returns categories and items
 app.get('/api/menu', async () => {
-  // Flatten items and attach categoryId for client consumption
-  const categories = menuData.categories.map(({ id, name }) => ({ id, name }));
-  const items = [];
-  menuData.categories.forEach((cat) => {
-    (cat.items || []).forEach((item) => {
-      items.push({
-        id: item.id,
-        name: item.name,
-        description: item.description || '',
-        price: item.pricePence,
-        categoryId: cat.id,
-      });
-    });
-  });
-  return { categories, items };
+  try {
+    // Get categories
+    const { data: categories, error: catError } = await supabase
+      .from('categories')
+      .select('id, name')
+      .order('display_order');
+
+    if (catError) throw catError;
+
+    // Get menu items
+    const { data: items, error: itemsError } = await supabase
+      .from('menu_items')
+      .select('id, name, description, price_pence, category_id, image_url')
+      .eq('is_available', true)
+      .order('display_order');
+
+    if (itemsError) throw itemsError;
+
+    // Transform data for client
+    const transformedItems = items.map(item => ({
+      id: item.id,
+      name: item.name,
+      description: item.description || '',
+      price: item.price_pence,
+      categoryId: item.category_id,
+      imageUrl: item.image_url
+    }));
+
+    return { categories, items: transformedItems };
+  } catch (error) {
+    app.log.error('Menu fetch error:', error);
+    return { categories: [], items: [] };
+  }
 });
 
 // Create a new cart
@@ -60,17 +74,31 @@ app.post('/api/cart/:id/add', async (req, reply) => {
     return;
   }
   const { itemId, qty = 1, modifiers = [] } = req.body || {};
-  const item = menuData.categories.flatMap(cat => cat.items).find(it => it.id === itemId);
-  if (!item) {
-    reply.code(400).send({ error: 'Invalid item' });
-    return;
+  
+  try {
+    // Get item from database
+    const { data: item, error } = await supabase
+      .from('menu_items')
+      .select('id, name, price_pence')
+      .eq('id', itemId)
+      .eq('is_available', true)
+      .single();
+
+    if (error || !item) {
+      reply.code(400).send({ error: 'Invalid item' });
+      return;
+    }
+
+    // Compute price delta from modifiers
+    const modSum = modifiers.reduce((sum, m) => sum + (m.priceDeltaPence || 0), 0);
+    const unitPrice = item.price_pence + modSum;
+    cart.items.push({ itemId, qty, unitPrice, modifiers });
+    cart.subtotalPence += unitPrice * qty;
+    return cart;
+  } catch (error) {
+    app.log.error('Error adding item to cart:', error);
+    reply.code(500).send({ error: 'Failed to add item to cart' });
   }
-  // Compute price delta from modifiers
-  const modSum = modifiers.reduce((sum, m) => sum + (m.priceDeltaPence || 0), 0);
-  const unitPrice = item.pricePence + modSum;
-  cart.items.push({ itemId, qty, unitPrice, modifiers });
-  cart.subtotalPence += unitPrice * qty;
-  return cart;
 });
 
 // Delivery quote endpoint
@@ -96,6 +124,7 @@ app.post('/api/checkout', async (req, reply) => {
     totalPence = 0,
     paymentMethod = 'card',
   } = req.body || {};
+  
   if (!contact || !contact.name || !contact.phone) {
     reply.code(400).send({ error: 'Missing contact information' });
     return;
@@ -104,9 +133,128 @@ app.post('/api/checkout', async (req, reply) => {
     reply.code(400).send({ error: 'Cart is empty' });
     return;
   }
-  // In a real implementation, persist order, handle payment, trigger printer, etc.
-  const orderId = 'ORD' + Math.random().toString(36).slice(2, 10).toUpperCase();
-  return { ok: true, orderId, message: 'Order placed successfully', paymentMethod };
+
+  try {
+    // Generate order ID
+    const orderId = 'ORD' + Math.random().toString(36).slice(2, 10).toUpperCase();
+    
+    // Insert order into database
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        id: orderId,
+        contact_name: contact.name,
+        contact_phone: contact.phone,
+        contact_email: contact.email,
+        mode,
+        postcode: address?.postcode,
+        address_line: address?.line1,
+        subtotal_pence: subtotalPence,
+        delivery_fee_pence: deliveryFeePence,
+        total_pence: totalPence,
+        payment_method: paymentMethod,
+        status: 'pending'
+      })
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    // Insert order items
+    const orderItems = cartItems.map(item => ({
+      order_id: orderId,
+      item_id: item.id,
+      item_name: item.name,
+      quantity: item.qty,
+      unit_price_pence: item.price,
+      total_price_pence: item.price * item.qty,
+      modifiers: item.modifiers || []
+    }));
+
+    const { error: itemsError } = await supabase
+      .from('order_items')
+      .insert(orderItems);
+
+    if (itemsError) throw itemsError;
+
+    // Send confirmation email if email is provided
+    if (contact.email) {
+      try {
+        await emailService.sendOrderConfirmation({
+          contact,
+          orderId,
+          totalPence,
+          cartItems,
+          mode
+        });
+      } catch (emailError) {
+        app.log.error('Email send error:', emailError);
+        // Don't fail the order if email fails
+      }
+    }
+
+    return { 
+      ok: true, 
+      orderId, 
+      message: 'Order placed successfully', 
+      paymentMethod,
+      emailSent: !!contact.email
+    };
+  } catch (error) {
+    app.log.error('Checkout error:', error);
+    reply.code(500).send({ error: 'Failed to place order' });
+  }
+});
+
+// Image upload endpoint
+app.post('/api/upload/image', async (req, reply) => {
+  try {
+    const { itemId, imageData, fileName } = req.body;
+    
+    if (!itemId || !imageData || !fileName) {
+      reply.code(400).send({ error: 'Missing required fields' });
+      return;
+    }
+
+    // Convert base64 to buffer
+    const buffer = Buffer.from(imageData.split(',')[1], 'base64');
+    
+    // Generate unique filename
+    const timestamp = Date.now();
+    const hash = Math.random().toString(36).substring(2, 15);
+    const extension = fileName.split('.').pop();
+    const path = `menu/${itemId}/main-${hash}.${extension}`;
+
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from('media')
+      .upload(path, buffer, {
+        contentType: `image/${extension}`,
+        upsert: false
+      });
+
+    if (error) throw error;
+
+    // Generate public URL
+    const publicUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/media/${path}`;
+
+    // Update menu item with image URL
+    const { error: updateError } = await supabase
+      .from('menu_items')
+      .update({ image_url: publicUrl })
+      .eq('id', itemId);
+
+    if (updateError) throw updateError;
+
+    return { 
+      success: true, 
+      url: publicUrl,
+      path: path
+    };
+  } catch (error) {
+    app.log.error('Image upload error:', error);
+    reply.code(500).send({ error: 'Failed to upload image' });
+  }
 });
 
 // TODO: checkout endpoints, printing ACK, etc. For brevity we stub them.
