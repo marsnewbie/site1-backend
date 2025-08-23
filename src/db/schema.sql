@@ -1,6 +1,22 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Store configuration table
+CREATE TABLE IF NOT EXISTS store_config (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  name TEXT NOT NULL,
+  currency TEXT DEFAULT '£',
+  location_lat DECIMAL(10,8),
+  location_lng DECIMAL(11,8),
+  address TEXT,
+  postcode TEXT,
+  delivery_active_rule_type TEXT DEFAULT 'postcode' CHECK (delivery_active_rule_type IN ('postcode', 'distance')),
+  delivery_postcode_rules JSONB,
+  delivery_distance_rules JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Categories table
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,

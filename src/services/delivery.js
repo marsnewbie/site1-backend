@@ -1,10 +1,5 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-// Get current directory for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { supabase } from '../lib/supabase.js';
+import { geocodeToCoord, drivingDistanceMiles } from '../lib/mapclient.js';
 
 // Helpers for postcode normalization and validation
 export function normalizeUkPostcode(raw = '') {
@@ -17,108 +12,197 @@ export function isValidUkPostcodeFormat(pc = '') {
   return /^[A-Z]{1,2}[0-9][0-9A-Z]?\s?[0-9][A-Z]{2}$/.test(pc.toUpperCase());
 }
 
-// Load delivery configs (for demonstration we load two sample files)
-const postcodeConfigPath = path.join(__dirname, '..', '..', 'seed', 'delivery.postcode_zone.sample.json');
-const mileConfigPath = path.join(__dirname, '..', '..', 'seed', 'delivery.driving_mile.sample.json');
-
-function loadConfig(activeType) {
-  let cfg;
-  if (activeType === 'postcode_prefix') {
-    cfg = JSON.parse(fs.readFileSync(postcodeConfigPath, 'utf-8'));
-  } else if (activeType === 'distance_bands') {
-    cfg = JSON.parse(fs.readFileSync(mileConfigPath, 'utf-8'));
-  } else {
-    throw new Error('Invalid delivery mode');
-  }
-  return cfg;
-}
-
 // Quote using postcode prefix zones
-function quoteByPostcodePrefix(cfg, postcode, subtotalPence) {
-  const pp = cfg.postcode_prefix;
+async function quoteByPostcodePrefix(postcodeRules, postcode, subtotalPence) {
   // Normalize and validate
   const normalized = normalizeUkPostcode(postcode);
   if (!isValidUkPostcodeFormat(normalized)) {
-    return { isDeliverable: false, feePence: 0, minOrderPence: 0, zone: null, reason: 'Invalid postcode', debug: { engine: 'postcode_prefix', normalized } };
+    return { 
+      isDeliverable: false, 
+      feePence: 0, 
+      minOrderPence: 0, 
+      zone: null, 
+      reason: 'Invalid postcode', 
+      debug: { engine: 'postcode', normalized } 
+    };
   }
+  
   // longest prefix match
-  const zones = pp.areas.slice().sort((a, b) => b.pattern.length - a.pattern.length);
+  const zones = postcodeRules.areas.slice().sort((a, b) => b.pattern.length - a.pattern.length);
   const match = zones.find(z => normalized.startsWith(z.pattern.toUpperCase()));
+  
   if (!match) {
-    return { isDeliverable: false, feePence: 0, minOrderPence: pp.default_min_order_gbp * 100, zone: null, reason: 'Out of delivery area', debug: { engine: 'postcode_prefix', normalized } };
+    return { 
+      isDeliverable: false, 
+      feePence: 0, 
+      minOrderPence: postcodeRules.default_min_order_threshold * 100, 
+      zone: null, 
+      reason: 'Out of delivery area', 
+      debug: { engine: 'postcode', normalized } 
+    };
   }
-  const minOrderPence = (pp.default_min_order_gbp || 0) * 100;
-  const feeGbp = match.fee_gbp;
+  
+  const minOrderPence = (postcodeRules.default_min_order_threshold || 0) * 100;
+  const feeGbp = match.fee;
   const subtotalGbp = subtotalPence / 100;
   let feePence = Math.round(feeGbp * 100);
-  if (subtotalGbp < (pp.default_min_order_gbp || 0)) {
-    feePence += Math.round((pp.extra_fee_if_below_min_gbp || 0) * 100);
+  
+  if (subtotalGbp < (postcodeRules.default_min_order_threshold || 0)) {
+    feePence += Math.round((postcodeRules.default_extra_fee_if_below_threshold || 0) * 100);
   }
+  
   return {
     isDeliverable: true,
     feePence,
     minOrderPence,
     zone: match.pattern,
     reason: null,
-    debug: { engine: 'postcode_prefix', normalized, matchedPrefix: match.pattern }
+    debug: { engine: 'postcode', normalized, matchedPrefix: match.pattern }
   };
 }
 
 // Quote using distance bands (driving mile)
-function quoteByDistanceBands(cfg, postcode, address, subtotalPence) {
-  const db = cfg.distance_bands;
-  // For demonstration we simulate a route distance rather than calling Mapbox
-  // In production, call Mapbox Directions Matrix using SHOP_ORIGIN_LAT/LNG and customer geocode
-  const simulatedMiles = 1.5; // stub value
-  const minOrderGbp = (db.min_order_threshold_gbp != null ? db.min_order_threshold_gbp : cfg.postcode_prefix?.default_min_order_gbp) || 0;
-  if (simulatedMiles > db.no_service_beyond_miles) {
+async function quoteByDistanceBands(distanceRules, storeLocation, postcode, address, subtotalPence) {
+  try {
+    // Geocode customer address
+    const customerCoord = await geocodeToCoord(address || postcode);
+    if (!customerCoord) {
+      return {
+        isDeliverable: false,
+        feePence: 0,
+        minOrderPence: 0,
+        zone: null,
+        reason: 'Unable to geocode address',
+        debug: { engine: 'distance', address, postcode }
+      };
+    }
+
+    // Calculate driving distance
+    const distanceMiles = await drivingDistanceMiles(storeLocation, customerCoord);
+    if (distanceMiles === null) {
+      return {
+        isDeliverable: false,
+        feePence: 0,
+        minOrderPence: 0,
+        zone: null,
+        reason: 'Unable to calculate route',
+        debug: { engine: 'distance', distanceMiles }
+      };
+    }
+
+    // Check if beyond service range
+    if (distanceMiles > distanceRules.no_service_beyond) {
+      return {
+        isDeliverable: false,
+        feePence: 0,
+        minOrderPence: 0,
+        zone: null,
+        reason: 'Out of delivery range',
+        debug: { engine: 'distance', distanceMiles, maxRange: distanceRules.no_service_beyond }
+      };
+    }
+
+    // Find appropriate band
+    const band = distanceRules.bands.find(b => distanceMiles <= b.max_distance);
+    if (!band) {
+      return {
+        isDeliverable: false,
+        feePence: 0,
+        minOrderPence: 0,
+        zone: null,
+        reason: 'Out of delivery range',
+        debug: { engine: 'distance', distanceMiles }
+      };
+    }
+
+    const subtotalGbp = subtotalPence / 100;
+    const feeGbp = subtotalGbp >= 0 ? band.fee_if_subtotal_gte : band.fee_if_subtotal_lt;
+
+    return {
+      isDeliverable: true,
+      feePence: Math.round(feeGbp * 100),
+      minOrderPence: 0, // Distance rules don't have min order threshold
+      zone: `<= ${band.max_distance}mi`,
+      reason: null,
+      debug: { engine: 'distance', distanceMiles, band: band.max_distance }
+    };
+  } catch (error) {
     return {
       isDeliverable: false,
       feePence: 0,
-      minOrderPence: minOrderGbp * 100,
+      minOrderPence: 0,
       zone: null,
-      reason: 'Out of delivery range',
-      debug: { engine: 'distance_bands', routeMiles: simulatedMiles }
+      reason: 'Error calculating delivery fee',
+      debug: { engine: 'distance', error: error.message }
     };
   }
-  // find band
-  const band = db.bands.find(b => simulatedMiles <= b.max_miles);
-  if (!band) {
-    return {
-      isDeliverable: false,
-      feePence: 0,
-      minOrderPence: minOrderGbp * 100,
-      zone: null,
-      reason: 'Out of delivery range',
-      debug: { engine: 'distance_bands', routeMiles: simulatedMiles }
-    };
-  }
-  const subtotalGbp = subtotalPence / 100;
-  const feeGbp = subtotalGbp >= minOrderGbp ? band.fee_if_subtotal_gbp_gte : band.fee_if_subtotal_gbp_lt;
-  return {
-    isDeliverable: true,
-    feePence: Math.round(feeGbp * 100),
-    minOrderPence: minOrderGbp * 100,
-    zone: `<= ${band.max_miles}mi`,
-    reason: null,
-    debug: { engine: 'distance_bands', routeMiles: simulatedMiles, bandIdx: db.bands.indexOf(band) }
-  };
 }
 
 /**
  * Main quote function. Accepts mode (delivery/collection), postcode, address (optional), subtotalPence, store id.
  */
-export async function quoteDelivery({ mode, postcode, address, subtotalPence, store }) {
+export async function quoteDelivery({ mode, postcode, address, subtotalPence, store = 'default' }) {
   if (mode === 'collection') {
     return { isDeliverable: true, feePence: 0, minOrderPence: 0, zone: null, reason: null, debug: { engine: 'collection' } };
   }
-  // Load active config (use postcode sample as default)
-  const cfg = JSON.parse(fs.readFileSync(postcodeConfigPath, 'utf-8'));
-  const activeType = cfg.active_rule_type;
-  if (activeType === 'postcode_prefix') {
-    return quoteByPostcodePrefix(cfg, postcode, subtotalPence);
-  } else if (activeType === 'distance_bands') {
-    return quoteByDistanceBands(cfg, postcode, address, subtotalPence);
+
+  try {
+    // Get store configuration from database
+    const { data: storeConfig, error } = await supabase
+      .from('store_config')
+      .select('*')
+      .eq('id', store)
+      .single();
+
+    if (error || !storeConfig) {
+      return {
+        isDeliverable: false,
+        feePence: 0,
+        minOrderPence: 0,
+        zone: null,
+        reason: 'Store configuration not found',
+        debug: { engine: 'error', store }
+      };
+    }
+
+    const activeRuleType = storeConfig.delivery_active_rule_type;
+
+    if (activeRuleType === 'postcode') {
+      return await quoteByPostcodePrefix(
+        storeConfig.delivery_postcode_rules,
+        postcode,
+        subtotalPence
+      );
+    } else if (activeRuleType === 'distance') {
+      const storeLocation = {
+        lat: storeConfig.location_lat,
+        lng: storeConfig.location_lng
+      };
+      return await quoteByDistanceBands(
+        storeConfig.delivery_distance_rules,
+        storeLocation,
+        postcode,
+        address,
+        subtotalPence
+      );
+    }
+
+    return {
+      isDeliverable: false,
+      feePence: 0,
+      minOrderPence: 0,
+      zone: null,
+      reason: 'Invalid delivery rule type',
+      debug: { engine: 'error', activeRuleType }
+    };
+  } catch (error) {
+    return {
+      isDeliverable: false,
+      feePence: 0,
+      minOrderPence: 0,
+      zone: null,
+      reason: 'Error calculating delivery fee',
+      debug: { engine: 'error', error: error.message }
+    };
   }
-  throw new Error('Invalid delivery configuration');
 }

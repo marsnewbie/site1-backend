@@ -207,6 +207,56 @@ app.post('/api/checkout', async (req, reply) => {
   }
 });
 
+// Switch delivery rule type endpoint
+app.post('/api/delivery/switch-rule-type', async (req, reply) => {
+  try {
+    const { ruleType, storeId = 'default' } = req.body;
+    
+    if (!ruleType || !['postcode', 'distance'].includes(ruleType)) {
+      reply.code(400).send({ error: 'Invalid rule type. Must be "postcode" or "distance"' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('store_config')
+      .update({ delivery_active_rule_type: ruleType })
+      .eq('id', storeId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return { 
+      success: true, 
+      activeRuleType: ruleType,
+      message: `Delivery rule type switched to ${ruleType}`
+    };
+  } catch (error) {
+    app.log.error('Error switching delivery rule type:', error);
+    reply.code(500).send({ error: 'Failed to switch delivery rule type' });
+  }
+});
+
+// Get store configuration endpoint
+app.get('/api/store/config', async (req, reply) => {
+  try {
+    const { storeId = 'default' } = req.query;
+    
+    const { data, error } = await supabase
+      .from('store_config')
+      .select('*')
+      .eq('id', storeId)
+      .single();
+
+    if (error) throw error;
+
+    return data;
+  } catch (error) {
+    app.log.error('Error fetching store config:', error);
+    reply.code(500).send({ error: 'Failed to fetch store configuration' });
+  }
+});
+
 // Image upload endpoint
 app.post('/api/upload/image', async (req, reply) => {
   try {

@@ -13,6 +13,12 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 RESEND_API_KEY=re_xxxxxxxxxxxx
 ```
 
+### Mapbox 地图服务
+```
+MAPBOX_TOKEN=pk.xxxxxxxxxxxx
+MAPS_PROVIDER=mapbox
+```
+
 ## 设置步骤
 
 1. **创建 Supabase 项目**

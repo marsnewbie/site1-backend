@@ -101,7 +101,53 @@ async function seedData() {
       console.log('Menu items inserted successfully.');
     }
 
-    // Insert delivery zones
+    // Insert store configuration (China Palace)
+    console.log('Inserting store configuration...');
+    const storeConfig = {
+      id: 'default',
+      name: 'China Palace',
+      currency: '£',
+      location_lat: 53.61085,
+      location_lng: -1.35667,
+      address: '12 Barnsley Road, Hemsworth, Pontefract, WF9 4PY',
+      postcode: 'WF9 4PY',
+      delivery_active_rule_type: 'postcode', // Can be switched to 'distance'
+      delivery_postcode_rules: {
+        normalize_uk_postcode: true,
+        default_min_order_threshold: 10,
+        default_extra_fee_if_below_threshold: 1,
+        areas: [
+          { pattern: "WF9 4", fee: 2.30 },
+          { pattern: "WF9 3", fee: 2.60 },
+          { pattern: "S72 9", fee: 2.60 },
+          { pattern: "WF9 2", fee: 2.80 },
+          { pattern: "WF9 5", fee: 2.80 },
+          { pattern: "WF9 1", fee: 3.30 },
+          { pattern: "WF7 7", fee: 3.30 },
+          { pattern: "WF4 2", fee: 3.30 },
+          { pattern: "S72 8", fee: 3.30 },
+          { pattern: "S72 7", fee: 3.30 }
+        ]
+      },
+      delivery_distance_rules: {
+        unit: "mile",
+        bands: [
+          { max_distance: 1.0, fee_if_subtotal_gte: 0, fee_if_subtotal_lt: 1 },
+          { max_distance: 2.0, fee_if_subtotal_gte: 1, fee_if_subtotal_lt: 2 },
+          { max_distance: 3.0, fee_if_subtotal_gte: 2, fee_if_subtotal_lt: 3 }
+        ],
+        no_service_beyond: 3.0
+      }
+    };
+
+    const { error: storeError } = await supabase
+      .from('store_config')
+      .upsert(storeConfig, { onConflict: 'id' });
+    
+    if (storeError) throw storeError;
+    console.log('Store configuration inserted successfully.');
+
+    // Insert delivery zones (legacy table - keeping for backward compatibility)
     if (isEmpty.zones) {
       console.log('Inserting delivery zones...');
       const zones = postcodeData.postcode_prefix.areas.map(zone => ({
