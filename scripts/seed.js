@@ -88,6 +88,207 @@ async function seedData() {
       
       if (itemsError) throw itemsError;
       console.log('Menu items inserted successfully.');
+
+      // Insert menu options for Aromatic Duck
+      console.log('Inserting menu options...');
+      
+      // Option 1: Size (Radio, Required)
+      const { data: sizeOption, error: sizeOptionError } = await supabase
+        .from('menu_options')
+        .insert({
+          item_id: 'item_aromatic_duck',
+          name: 'Size',
+          type: 'radio',
+          required: true,
+          display_order: 1
+        })
+        .select()
+        .single();
+      
+      if (sizeOptionError) throw sizeOptionError;
+
+      // Size choices
+      const { error: sizeChoicesError } = await supabase
+        .from('menu_option_choices')
+        .insert([
+          {
+            option_id: sizeOption.id,
+            name: 'Large',
+            price_delta_pence: 100,
+            display_order: 1
+          },
+          {
+            option_id: sizeOption.id,
+            name: 'Small',
+            price_delta_pence: 50,
+            display_order: 2
+          }
+        ]);
+      
+      if (sizeChoicesError) throw sizeChoicesError;
+
+      // Option 2: Sauce (Checkbox, Optional)
+      const { data: sauceOption, error: sauceOptionError } = await supabase
+        .from('menu_options')
+        .insert({
+          item_id: 'item_aromatic_duck',
+          name: 'Sauce',
+          type: 'checkbox',
+          required: false,
+          display_order: 2
+        })
+        .select()
+        .single();
+      
+      if (sauceOptionError) throw sauceOptionError;
+
+      // Sauce choices
+      const { error: sauceChoicesError } = await supabase
+        .from('menu_option_choices')
+        .insert([
+          {
+            option_id: sauceOption.id,
+            name: 'No Sauce',
+            price_delta_pence: 0,
+            display_order: 1
+          },
+          {
+            option_id: sauceOption.id,
+            name: 'Curry Sauce',
+            price_delta_pence: 100,
+            display_order: 2
+          },
+          {
+            option_id: sauceOption.id,
+            name: 'Satay Sauce',
+            price_delta_pence: 100,
+            display_order: 3
+          }
+        ]);
+      
+      if (sauceChoicesError) throw sauceChoicesError;
+
+      // Set Meal A options
+      // Option 1: Main Course (Radio, Required)
+      const { data: mainCourseOption, error: mainCourseOptionError } = await supabase
+        .from('menu_options')
+        .insert({
+          item_id: 'item_set_meal_a',
+          name: 'Main Course',
+          type: 'radio',
+          required: true,
+          display_order: 1
+        })
+        .select()
+        .single();
+      
+      if (mainCourseOptionError) throw mainCourseOptionError;
+
+      // Main course choices
+      const { data: mainCourseChoices, error: mainCourseChoicesError } = await supabase
+        .from('menu_option_choices')
+        .insert([
+          {
+            option_id: mainCourseOption.id,
+            name: 'Beef Curry',
+            price_delta_pence: 0,
+            display_order: 1
+          },
+          {
+            option_id: mainCourseOption.id,
+            name: 'Chicken Curry',
+            price_delta_pence: 0,
+            display_order: 2
+          }
+        ])
+        .select();
+      
+      if (mainCourseChoicesError) throw mainCourseChoicesError;
+
+      // Option 2: Side (Radio, Required) - Conditional on main course
+      const { data: sideOption, error: sideOptionError } = await supabase
+        .from('menu_options')
+        .insert({
+          item_id: 'item_set_meal_a',
+          name: 'Side',
+          type: 'radio',
+          required: true,
+          display_order: 2
+        })
+        .select()
+        .single();
+      
+      if (sideOptionError) throw sideOptionError;
+
+      // Side choices
+      const { data: sideChoices, error: sideChoicesError } = await supabase
+        .from('menu_option_choices')
+        .insert([
+          {
+            option_id: sideOption.id,
+            name: 'Rice',
+            price_delta_pence: 0,
+            display_order: 1
+          },
+          {
+            option_id: sideOption.id,
+            name: 'Noodle',
+            price_delta_pence: 100,
+            display_order: 2
+          },
+          {
+            option_id: sideOption.id,
+            name: 'Chips',
+            price_delta_pence: 100,
+            display_order: 3
+          },
+          {
+            option_id: sideOption.id,
+            name: 'Fried Rice',
+            price_delta_pence: 100,
+            display_order: 4
+          }
+        ])
+        .select();
+      
+      if (sideChoicesError) throw sideChoicesError;
+
+      // Set up conditional options
+      // Beef Curry -> Rice/Noodle
+      const beefCurry = mainCourseChoices.find(c => c.name === 'Beef Curry');
+      const rice = sideChoices.find(c => c.name === 'Rice');
+      const noodle = sideChoices.find(c => c.name === 'Noodle');
+      
+      const { error: beefConditionalError } = await supabase
+        .from('menu_conditional_options')
+        .insert([
+          {
+            parent_option_id: mainCourseOption.id,
+            parent_choice_id: beefCurry.id,
+            dependent_option_id: sideOption.id
+          }
+        ]);
+      
+      if (beefConditionalError) throw beefConditionalError;
+
+      // Chicken Curry -> Chips/Fried Rice
+      const chickenCurry = mainCourseChoices.find(c => c.name === 'Chicken Curry');
+      const chips = sideChoices.find(c => c.name === 'Chips');
+      const friedRice = sideChoices.find(c => c.name === 'Fried Rice');
+      
+      const { error: chickenConditionalError } = await supabase
+        .from('menu_conditional_options')
+        .insert([
+          {
+            parent_option_id: mainCourseOption.id,
+            parent_choice_id: chickenCurry.id,
+            dependent_option_id: sideOption.id
+          }
+        ]);
+      
+      if (chickenConditionalError) throw chickenConditionalError;
+
+      console.log('Menu options inserted successfully.');
     }
 
     // Insert store configuration (China Palace)
@@ -135,6 +336,96 @@ async function seedData() {
     
     if (storeError) throw storeError;
     console.log('Store configuration inserted successfully.');
+
+    // Insert discount rules
+    console.log('Inserting discount rules...');
+    const discountRules = [
+      {
+        name: '10% off over £10',
+        type: 'percentage',
+        min_amount_pence: 1000,
+        discount_value: 10.0,
+        can_combine: false,
+        is_active: true
+      },
+      {
+        name: '15% off over £20',
+        type: 'percentage',
+        min_amount_pence: 2000,
+        discount_value: 15.0,
+        can_combine: false,
+        is_active: true
+      },
+      {
+        name: '£1 off over £10',
+        type: 'fixed_amount',
+        min_amount_pence: 1000,
+        discount_value: 1.0,
+        can_combine: true,
+        is_active: true
+      },
+      {
+        name: 'Free Prawn Crackers over £20',
+        type: 'free_item',
+        min_amount_pence: 2000,
+        free_item_name: 'Prawn Crackers',
+        can_combine: true,
+        is_active: true
+      }
+    ];
+
+    const { error: discountError } = await supabase
+      .from('discount_rules')
+      .insert(discountRules);
+    
+    if (discountError) throw discountError;
+    console.log('Discount rules inserted successfully.');
+
+    // Insert opening hours
+    console.log('Inserting opening hours...');
+    const openingHours = [
+      { day_of_week: 1, open_time: '12:00', close_time: '15:00' }, // Monday lunch
+      { day_of_week: 1, open_time: '17:00', close_time: '23:00' }, // Monday dinner
+      { day_of_week: 2, is_closed: true }, // Tuesday closed
+      { day_of_week: 3, open_time: '12:00', close_time: '15:00' }, // Wednesday lunch
+      { day_of_week: 3, open_time: '17:00', close_time: '23:00' }, // Wednesday dinner
+      { day_of_week: 4, open_time: '12:00', close_time: '15:00' }, // Thursday lunch
+      { day_of_week: 4, open_time: '17:00', close_time: '23:00' }, // Thursday dinner
+      { day_of_week: 5, open_time: '16:00', close_time: '00:00' }, // Friday
+      { day_of_week: 6, open_time: '16:00', close_time: '00:00' }, // Saturday
+      { day_of_week: 0, open_time: '16:00', close_time: '00:00' }  // Sunday
+    ];
+
+    const { error: hoursError } = await supabase
+      .from('store_opening_hours')
+      .insert(openingHours);
+    
+    if (hoursError) throw hoursError;
+    console.log('Opening hours inserted successfully.');
+
+    // Insert holidays
+    console.log('Inserting holidays...');
+    const holidays = [
+      {
+        holiday_date: '2025-08-24',
+        description: 'Summer Holiday'
+      },
+      {
+        holiday_date: '2025-08-26',
+        description: 'Summer Holiday'
+      },
+      {
+        holiday_date: '2025-09-01',
+        description: 'Bank Holiday'
+      }
+    ];
+
+    const { error: holidaysError } = await supabase
+      .from('store_holidays')
+      .insert(holidays);
+    
+    if (holidaysError) throw holidaysError;
+    console.log('Holidays inserted successfully.');
 
     // Note: delivery_zones table is legacy and no longer used
     // All delivery rules are now stored in store_config table

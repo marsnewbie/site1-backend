@@ -40,6 +40,69 @@ CREATE TABLE IF NOT EXISTS menu_items (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Menu options table (for item customization)
+CREATE TABLE IF NOT EXISTS menu_options (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  item_id TEXT REFERENCES menu_items(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('radio', 'checkbox')),
+  required BOOLEAN DEFAULT false,
+  display_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Menu option choices table
+CREATE TABLE IF NOT EXISTS menu_option_choices (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  option_id UUID REFERENCES menu_options(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  price_delta_pence INTEGER DEFAULT 0,
+  display_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Conditional options (for dependent options like Set Meal choices)
+CREATE TABLE IF NOT EXISTS menu_conditional_options (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  parent_option_id UUID REFERENCES menu_options(id) ON DELETE CASCADE,
+  parent_choice_id UUID REFERENCES menu_option_choices(id) ON DELETE CASCADE,
+  dependent_option_id UUID REFERENCES menu_options(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Discount rules table
+CREATE TABLE IF NOT EXISTS discount_rules (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('percentage', 'fixed_amount', 'free_item')),
+  min_amount_pence INTEGER NOT NULL,
+  discount_value DECIMAL(10,2), -- percentage or fixed amount
+  free_item_name TEXT, -- for free item discounts
+  can_combine BOOLEAN DEFAULT false,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Store opening hours table
+CREATE TABLE IF NOT EXISTS store_opening_hours (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  day_of_week INTEGER NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6), -- 0=Sunday, 1=Monday, etc.
+  open_time TIME,
+  close_time TIME,
+  is_closed BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Store holidays table
+CREATE TABLE IF NOT EXISTS store_holidays (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  holiday_date DATE NOT NULL,
+  start_time TIME DEFAULT '00:01',
+  end_time TIME DEFAULT '23:59',
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Orders table
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,

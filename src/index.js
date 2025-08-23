@@ -22,7 +22,7 @@ const carts = {};
 // Health check
 app.get('/health', async () => ({ ok: true }));
 
-// GET /api/menu returns categories and items
+// GET /api/menu returns categories and items with options
 app.get('/api/menu', async () => {
   try {
     // Get categories
@@ -42,17 +42,69 @@ app.get('/api/menu', async () => {
 
     if (itemsError) throw itemsError;
 
-    // Transform data for client
-    const transformedItems = items.map(item => ({
-      id: item.id,
-      name: item.name,
-      description: item.description || '',
-      price: item.price_pence,
-      categoryId: item.category_id,
-      imageUrl: item.image_url
-    }));
+    // Get options for each item
+    const itemsWithOptions = await Promise.all(
+      items.map(async (item) => {
+        // Get options
+        const { data: options, error: optionsError } = await supabase
+          .from('menu_options')
+          .select(`
+            id,
+            name,
+            type,
+            required,
+            display_order,
+            menu_option_choices (
+              id,
+              name,
+              price_delta_pence,
+              display_order
+            )
+          `)
+          .eq('item_id', item.id)
+          .order('display_order');
 
-    return { categories, items: transformedItems };
+        if (optionsError) {
+          app.log.error(`Error fetching options for item ${item.id}:`, optionsError);
+          return {
+            id: item.id,
+            name: item.name,
+            description: item.description || '',
+            price: item.price_pence,
+            categoryId: item.category_id,
+            imageUrl: item.image_url,
+            options: []
+          };
+        }
+
+        // Transform options
+        const transformedOptions = options.map(option => ({
+          id: option.id,
+          name: option.name,
+          type: option.type,
+          required: option.required,
+          choices: option.menu_option_choices
+            .sort((a, b) => a.display_order - b.display_order)
+            .map(choice => ({
+              id: choice.id,
+              name: choice.name,
+              priceDelta: choice.price_delta_pence
+            }))
+        }));
+
+        return {
+          id: item.id,
+          name: item.name,
+          description: item.description || '',
+          price: item.price_pence,
+          categoryId: item.category_id,
+          imageUrl: item.image_url,
+          options: transformedOptions
+        };
+      })
+    );
+
+    return { categories, items: itemsWithOptions };
   } catch (error) {
     app.log.error('Menu fetch error:', error);
     return { categories: [], items: [] };
@@ -254,6 +306,119 @@ app.get('/api/store/config', async (req, reply) => {
   } catch (error) {
     app.log.error('Error fetching store config:', error);
     reply.code(500).send({ error: 'Failed to fetch store configuration' });
+  }
+});
+
+// Get discount rules endpoint
+app.get('/api/discounts', async (req, reply) => {
+  try {
+    const { data, error } = await supabase
+      .from('discount_rules')
+      .select('*')
+      .eq('is_active', true)
+      .order('min_amount_pence');
+
+    if (error) throw error;
+
+    return data;
+  } catch (error) {
+    app.log.error('Error fetching discount rules:', error);
+    reply.code(500).send({ error: 'Failed to fetch discount rules' });
+  }
+});
+
+// Get opening hours endpoint
+app.get('/api/store/hours', async (req, reply) => {
+  try {
+    const { data, error } = await supabase
+      .from('store_opening_hours')
+      .select('*')
+      .order('day_of_week, open_time');
+
+    if (error) throw error;
+
+    return data;
+  } catch (error) {
+    app.log.error('Error fetching opening hours:', error);
+    reply.code(500).send({ error: 'Failed to fetch opening hours' });
+  }
+});
+
+// Get holidays endpoint
+app.get('/api/store/holidays', async (req, reply) => {
+  try {
+    const { data, error } = await supabase
+      .from('store_holidays')
+      .select('*')
+      .gte('holiday_date', new Date().toISOString().split('T')[0])
+      .order('holiday_date');
+
+    if (error) throw error;
+
+    return data;
+  } catch (error) {
+    app.log.error('Error fetching holidays:', error);
+    reply.code(500).send({ error: 'Failed to fetch holidays' });
+  }
+});
+
+// Check if store is open endpoint
+app.get('/api/store/is-open', async (req, reply) => {
+  try {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
+    const currentDate = now.toISOString().split('T')[0];
+
+    // Check if today is a holiday
+    const { data: holidays, error: holidayError } = await supabase
+      .from('store_holidays')
+      .select('*')
+      .eq('holiday_date', currentDate);
+
+    if (holidayError) throw holidayError;
+
+    if (holidays && holidays.length > 0) {
+      return { isOpen: false, reason: 'Holiday' };
+    }
+
+    // Check opening hours for today
+    const { data: hours, error: hoursError } = await supabase
+      .from('store_opening_hours')
+      .select('*')
+      .eq('day_of_week', dayOfWeek)
+      .order('open_time');
+
+    if (hoursError) throw hoursError;
+
+    if (!hours || hours.length === 0) {
+      return { isOpen: false, reason: 'No opening hours set' };
+    }
+
+    // Check if any time slot is currently open
+    const isCurrentlyOpen = hours.some(slot => {
+      if (slot.is_closed) return false;
+      
+      const openTime = slot.open_time;
+      const closeTime = slot.close_time;
+      
+      // Handle overnight hours (e.g., 16:00-00:00)
+      if (closeTime < openTime) {
+        return currentTime >= openTime || currentTime <= closeTime;
+      } else {
+        return currentTime >= openTime && currentTime <= closeTime;
+      }
+    });
+
+    return { 
+      isOpen: isCurrentlyOpen, 
+      reason: isCurrentlyOpen ? 'Open' : 'Outside opening hours',
+      currentTime,
+      dayOfWeek
+    };
+  } catch (error) {
+    app.log.error('Error checking store status:', error);
+    reply.code(500).send({ error: 'Failed to check store status' });
   }
 });
 
