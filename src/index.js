@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import path from 'path';
 import { fileURLToPath } from 'url';
 import { supabase } from './lib/supabase.js';
 import { emailService } from './lib/email.js';
