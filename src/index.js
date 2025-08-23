@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { quoteDelivery } from './services/delivery.js';
 
 // Create Fastify instance
@@ -10,8 +11,12 @@ const app = Fastify({ logger: true });
 // Enable CORS for all origins (for local dev)
 await app.register(cors, { origin: '*' });
 
+// Get current directory for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Load menu seed once
-const menuPath = path.join(__dirname, '..', '..', 'seed', 'menu.sample.json');
+const menuPath = path.join(__dirname, '..', 'seed', 'menu.sample.json');
 const menuData = JSON.parse(fs.readFileSync(menuPath, 'utf-8'));
 
 // Simple in-memory cart store (dev only)

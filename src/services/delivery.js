@@ -1,5 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get current directory for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Helpers for postcode normalization and validation
 export function normalizeUkPostcode(raw = '') {
@@ -13,8 +18,8 @@ export function isValidUkPostcodeFormat(pc = '') {
 }
 
 // Load delivery configs (for demonstration we load two sample files)
-const postcodeConfigPath = path.join(process.cwd(), 'cp-stack', 'seed', 'delivery.postcode_zone.sample.json');
-const mileConfigPath = path.join(process.cwd(), 'cp-stack', 'seed', 'delivery.driving_mile.sample.json');
+const postcodeConfigPath = path.join(__dirname, '..', '..', 'seed', 'delivery.postcode_zone.sample.json');
+const mileConfigPath = path.join(__dirname, '..', '..', 'seed', 'delivery.driving_mile.sample.json');
 
 function loadConfig(activeType) {
   let cfg;
