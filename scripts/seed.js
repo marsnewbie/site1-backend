@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { supabase } from '../src/lib/supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,22 +23,13 @@ async function checkIfEmpty() {
 
     if (itemsError) throw itemsError;
 
-    // Check if delivery_zones table is empty
-    const { data: zones, error: zonesError } = await supabase
-      .from('delivery_zones')
-      .select('id')
-      .limit(1);
-
-    if (zonesError) throw zonesError;
-
     return {
       categories: categories.length === 0,
-      items: items.length === 0,
-      zones: zones.length === 0
+      items: items.length === 0
     };
   } catch (error) {
     console.error('Error checking database:', error);
-    return { categories: true, items: true, zones: true };
+    return { categories: true, items: true };
   }
 }
 
@@ -50,24 +38,20 @@ async function seedData() {
     console.log('Checking if database is empty...');
     const isEmpty = await checkIfEmpty();
     
-    if (!isEmpty.categories && !isEmpty.items && !isEmpty.zones) {
+    if (!isEmpty.categories && !isEmpty.items) {
       console.log('Database is not empty, skipping seed data.');
       return;
     }
 
     console.log('Database is empty, seeding data...');
 
-    // Load seed data
-    const menuPath = path.join(__dirname, '..', 'seed', 'menu.sample.json');
-    const menuData = JSON.parse(fs.readFileSync(menuPath, 'utf-8'));
-
-    const postcodePath = path.join(__dirname, '..', 'seed', 'delivery.postcode_zone.sample.json');
-    const postcodeData = JSON.parse(fs.readFileSync(postcodePath, 'utf-8'));
-
     // Insert categories
     if (isEmpty.categories) {
       console.log('Inserting categories...');
-      const categories = menuData.categories.map(({ id, name }) => ({ id, name }));
+      const categories = [
+        { id: 'cat_app', name: 'Appetisers' },
+        { id: 'cat_set', name: 'Set Meals' }
+      ];
       const { error: catError } = await supabase
         .from('categories')
         .insert(categories);
@@ -79,19 +63,24 @@ async function seedData() {
     // Insert menu items
     if (isEmpty.items) {
       console.log('Inserting menu items...');
-      const items = [];
-      menuData.categories.forEach((cat) => {
-        (cat.items || []).forEach((item) => {
-          items.push({
-            id: item.id,
-            category_id: cat.id,
-            name: item.name,
-            description: item.description || '',
-            price_pence: item.pricePence,
-            display_order: 1
-          });
-        });
-      });
+      const items = [
+        {
+          id: 'item_aromatic_duck',
+          category_id: 'cat_app',
+          name: 'Aromatic Duck',
+          description: 'Crispy aromatic duck with pancakes, spring onion & cucumber.',
+          price_pence: 900,
+          display_order: 1
+        },
+        {
+          id: 'item_set_meal_a',
+          category_id: 'cat_set',
+          name: 'Set Meal A (for 2 people)',
+          description: 'Complete meal for two people',
+          price_pence: 1000,
+          display_order: 1
+        }
+      ];
 
       const { error: itemsError } = await supabase
         .from('menu_items')
@@ -147,22 +136,8 @@ async function seedData() {
     if (storeError) throw storeError;
     console.log('Store configuration inserted successfully.');
 
-    // Insert delivery zones (legacy table - keeping for backward compatibility)
-    if (isEmpty.zones) {
-      console.log('Inserting delivery zones...');
-      const zones = postcodeData.postcode_prefix.areas.map(zone => ({
-        pattern: zone.pattern,
-        fee_gbp: zone.fee_gbp,
-        min_order_gbp: postcodeData.postcode_prefix.default_min_order_gbp || 0
-      }));
-
-      const { error: zonesError } = await supabase
-        .from('delivery_zones')
-        .insert(zones);
-      
-      if (zonesError) throw zonesError;
-      console.log('Delivery zones inserted successfully.');
-    }
+    // Note: delivery_zones table is legacy and no longer used
+    // All delivery rules are now stored in store_config table
 
     console.log('Seed data inserted successfully!');
   } catch (error) {
