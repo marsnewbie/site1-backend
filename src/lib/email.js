@@ -5,27 +5,45 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 export const emailService = {
   // Send order confirmation email
   sendOrderConfirmation: async (orderData) => {
-    const { contact, orderId, totalPence, cartItems, mode } = orderData;
+    const { contact, orderId, totalPence, cartItems, mode, subtotalPence, deliveryFeePence, discountPence, comment } = orderData;
     
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Order Confirmation</h2>
+        <h2>Order Confirmation - China Palace</h2>
         <p>Dear ${contact.name},</p>
         <p>Thank you for your order! Your order number is: <strong>${orderId}</strong></p>
         
         <h3>Order Details:</h3>
-        <ul>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+          <tr style="background-color: #f5f5f5;">
+            <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Item</th>
+            <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Qty</th>
+            <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Price</th>
+            <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Total</th>
+          </tr>
           ${cartItems.map(item => `
-            <li>${item.qty} × ${item.name} - £${(item.price * item.qty / 100).toFixed(2)}</li>
+            <tr>
+              <td style="padding: 10px; border: 1px solid #ddd;">${item.name}</td>
+              <td style="padding: 10px; text-align: center; border: 1px solid #ddd;">${item.qty}</td>
+              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">£${(item.price / 100).toFixed(2)}</td>
+              <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">£${(item.price * item.qty / 100).toFixed(2)}</td>
+            </tr>
           `).join('')}
-        </ul>
+        </table>
         
-        <p><strong>Total: £${(totalPence / 100).toFixed(2)}</strong></p>
-        <p><strong>Mode: ${mode}</strong></p>
+        <div style="text-align: right; margin: 20px 0;">
+          <p><strong>Sub-Total: £${(subtotalPence / 100).toFixed(2)}</strong></p>
+          ${deliveryFeePence > 0 ? `<p><strong>Delivery Fee: £${(deliveryFeePence / 100).toFixed(2)}</strong></p>` : ''}
+          ${discountPence > 0 ? `<p><strong>Discount: -£${(discountPence / 100).toFixed(2)}</strong></p>` : ''}
+          <p style="font-size: 18px;"><strong>Total: £${(totalPence / 100).toFixed(2)}</strong></p>
+        </div>
+        
+        <p><strong>Mode: ${mode === 'delivery' ? 'Delivery' : 'Collection'}</strong></p>
+        ${comment ? `<p><strong>Comment:</strong> ${comment}</p>` : ''}
         
         <p>We'll notify you when your order is ready for ${mode === 'delivery' ? 'delivery' : 'collection'}.</p>
         
-        <p>Best regards,<br>Your Takeaway Team</p>
+        <p>Best regards,<br>China Palace Team</p>
       </div>
     `;
 

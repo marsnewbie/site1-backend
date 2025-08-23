@@ -176,8 +176,10 @@ app.post('/api/checkout', async (req, reply) => {
       cartItems,
       subtotalPence = 0,
       deliveryFeePence = 0,
+      discountPence = 0,
       totalPence = 0,
       paymentMethod = 'card',
+      comment = '',
       // Guest checkout data
       guestData,
       // Login data
@@ -209,6 +211,8 @@ app.post('/api/checkout', async (req, reply) => {
         }
         
         contact = {
+          firstName: guestData.firstName,
+          lastName: guestData.lastName,
           name: `${guestData.firstName} ${guestData.lastName || ''}`.trim(),
           email: guestData.email,
           phone: guestData.telephone
@@ -248,6 +252,8 @@ app.post('/api/checkout', async (req, reply) => {
 
         user = loginUser;
         contact = {
+          firstName: user.first_name,
+          lastName: user.last_name,
           name: `${user.first_name} ${user.last_name || ''}`.trim(),
           email: user.email,
           phone: user.telephone
@@ -322,6 +328,8 @@ app.post('/api/checkout', async (req, reply) => {
 
         user = newUser;
         contact = {
+          firstName: user.first_name,
+          lastName: user.last_name,
           name: `${user.first_name} ${user.last_name || ''}`.trim(),
           email: user.email,
           phone: user.telephone
@@ -348,17 +356,23 @@ app.post('/api/checkout', async (req, reply) => {
       .insert({
         id: orderId,
         user_id: user?.id,
-        contact_name: contact.name,
-        contact_phone: contact.phone,
+        store_name: 'China Palace',
+        first_name: contact.firstName || contact.name.split(' ')[0],
+        last_name: contact.lastName || contact.name.split(' ').slice(1).join(' '),
         contact_email: contact.email,
-        mode,
+        contact_phone: contact.phone,
         postcode: address.postcode,
-        address_line: address.line1,
+        address: address.line1,
+        street: address.streetName,
+        city: address.city,
+        mode,
         subtotal_pence: subtotalPence,
         delivery_fee_pence: deliveryFeePence,
+        discount_pence: discountPence,
         total_pence: totalPence,
         payment_method: paymentMethod,
-        status: 'pending'
+        status: 'processing',
+        comment: comment
       })
       .select()
       .single();
@@ -390,7 +404,11 @@ app.post('/api/checkout', async (req, reply) => {
           orderId,
           totalPence,
           cartItems,
-          mode
+          mode,
+          subtotalPence,
+          deliveryFeePence,
+          discountPence,
+          comment
         });
       } catch (emailError) {
         app.log.error('Email send error:', emailError);
@@ -992,6 +1010,97 @@ app.get('/api/store/delivery-times', async (req, reply) => {
   } catch (error) {
     app.log.error('Error getting delivery times:', error);
     reply.code(500).send({ error: 'Failed to get delivery times' });
+  }
+});
+
+// Get order details endpoint
+app.get('/api/orders/:orderId', async (req, reply) => {
+  try {
+    const { orderId } = req.params;
+    
+    // Get order details
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+
+    if (orderError || !order) {
+      reply.code(404).send({ error: 'Order not found' });
+      return;
+    }
+
+    // Get order items
+    const { data: items, error: itemsError } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('order_id', orderId)
+      .order('created_at');
+
+    if (itemsError) throw itemsError;
+
+    // Format order data
+    const formattedOrder = {
+      orderId: order.id,
+      storeName: order.store_name,
+      firstName: order.first_name,
+      lastName: order.last_name,
+      email: order.contact_email,
+      telephone: order.contact_phone,
+      postcode: order.postcode,
+      address: order.address,
+      street: order.street,
+      city: order.city,
+      paymentMethod: order.payment_method,
+      deliveryOrCollection: order.mode,
+      items: items.map(item => ({
+        itemName: item.item_name,
+        quantity: item.quantity,
+        unitPrice: item.unit_price_pence / 100,
+        itemTotal: item.total_price_pence / 100,
+        modifiers: item.modifiers
+      })),
+      subtotal: order.subtotal_pence / 100,
+      deliveryFee: order.delivery_fee_pence / 100,
+      discount: order.discount_pence / 100,
+      total: order.total_pence / 100,
+      orderStatus: order.status,
+      comment: order.comment,
+      timePlaced: order.time_placed,
+      createdAt: order.created_at
+    };
+
+    return formattedOrder;
+  } catch (error) {
+    app.log.error('Error fetching order details:', error);
+    reply.code(500).send({ error: 'Failed to fetch order details' });
+  }
+});
+
+// Update order status endpoint
+app.patch('/api/orders/:orderId/status', async (req, reply) => {
+  try {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['processing', 'pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled', 'complete'].includes(status)) {
+      reply.code(400).send({ error: 'Invalid status' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return { success: true, order: data };
+  } catch (error) {
+    app.log.error('Error updating order status:', error);
+    reply.code(500).send({ error: 'Failed to update order status' });
   }
 });
 
