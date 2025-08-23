@@ -289,6 +289,53 @@ app.post('/api/delivery/switch-rule-type', async (req, reply) => {
   }
 });
 
+// Update store time settings endpoint
+app.post('/api/store/update-time-settings', async (req, reply) => {
+  try {
+    const { 
+      collectionLeadTimeMinutes, 
+      deliveryLeadTimeMinutes, 
+      deliveryBufferBeforeCloseMinutes,
+      storeId = 'default' 
+    } = req.body;
+    
+    const updateData = {};
+    
+    if (collectionLeadTimeMinutes !== undefined) {
+      updateData.collection_lead_time_minutes = collectionLeadTimeMinutes;
+    }
+    if (deliveryLeadTimeMinutes !== undefined) {
+      updateData.delivery_lead_time_minutes = deliveryLeadTimeMinutes;
+    }
+    if (deliveryBufferBeforeCloseMinutes !== undefined) {
+      updateData.delivery_buffer_before_close_minutes = deliveryBufferBeforeCloseMinutes;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      reply.code(400).send({ error: 'No valid time settings provided' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('store_config')
+      .update(updateData)
+      .eq('id', storeId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return { 
+      success: true, 
+      updatedSettings: updateData,
+      message: 'Time settings updated successfully'
+    };
+  } catch (error) {
+    app.log.error('Error updating time settings:', error);
+    reply.code(500).send({ error: 'Failed to update time settings' });
+  }
+});
+
 // Get store configuration endpoint
 app.get('/api/store/config', async (req, reply) => {
   try {
@@ -379,7 +426,12 @@ app.get('/api/store/is-open', async (req, reply) => {
     if (holidayError) throw holidayError;
 
     if (holidays && holidays.length > 0) {
-      return { isOpen: false, reason: 'Holiday' };
+      const holiday = holidays[0];
+      const isInHolidayTime = currentTime >= holiday.start_time && currentTime <= holiday.end_time;
+      return { 
+        isOpen: !isInHolidayTime, 
+        reason: isInHolidayTime ? 'Holiday' : 'Open during holiday period'
+      };
     }
 
     // Check opening hours for today
@@ -419,6 +471,194 @@ app.get('/api/store/is-open', async (req, reply) => {
   } catch (error) {
     app.log.error('Error checking store status:', error);
     reply.code(500).send({ error: 'Failed to check store status' });
+  }
+});
+
+// Get available collection times endpoint
+app.get('/api/store/collection-times', async (req, reply) => {
+  try {
+    const { date } = req.query;
+    const targetDate = date || new Date().toISOString().split('T')[0];
+    
+    // Get store config for lead time
+    const { data: storeConfig, error: configError } = await supabase
+      .from('store_config')
+      .select('collection_lead_time_minutes')
+      .eq('id', 'default')
+      .single();
+
+    if (configError) throw configError;
+
+    const leadTimeMinutes = storeConfig.collection_lead_time_minutes || 15;
+    
+    // Get opening hours for the target date
+    const targetDay = new Date(targetDate).getDay();
+    const { data: hours, error: hoursError } = await supabase
+      .from('store_opening_hours')
+      .select('*')
+      .eq('day_of_week', targetDay)
+      .order('open_time');
+
+    if (hoursError) throw hoursError;
+
+    if (!hours || hours.length === 0) {
+      return { availableTimes: [], reason: 'Closed on this day' };
+    }
+
+    // Check if it's a holiday
+    const { data: holidays, error: holidayError } = await supabase
+      .from('store_holidays')
+      .select('*')
+      .eq('holiday_date', targetDate);
+
+    if (holidayError) throw holidayError;
+
+    const availableTimes = [];
+    const now = new Date();
+    const isToday = targetDate === now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 5);
+
+    hours.forEach(slot => {
+      if (slot.is_closed) return;
+
+      let startTime = slot.open_time;
+      let endTime = slot.close_time;
+
+      // If it's today, adjust start time based on lead time
+      if (isToday) {
+        const leadTimeDate = new Date();
+        leadTimeDate.setMinutes(leadTimeDate.getMinutes() + leadTimeMinutes);
+        const leadTimeStr = leadTimeDate.toTimeString().slice(0, 5);
+        
+        if (leadTimeStr > startTime) {
+          startTime = leadTimeStr;
+        }
+      }
+
+      // Generate 15-minute intervals
+      let currentSlot = new Date(`2000-01-01T${startTime}:00`);
+      const endSlot = new Date(`2000-01-01T${endTime}:00`);
+
+      while (currentSlot < endSlot) {
+        const timeStr = currentSlot.toTimeString().slice(0, 5);
+        
+        // Check if this time is within holiday period
+        const isHolidayTime = holidays && holidays.some(holiday => 
+          timeStr >= holiday.start_time && timeStr <= holiday.end_time
+        );
+
+        if (!isHolidayTime) {
+          availableTimes.push(timeStr);
+        }
+
+        currentSlot.setMinutes(currentSlot.getMinutes() + 15);
+      }
+    });
+
+    return { availableTimes };
+  } catch (error) {
+    app.log.error('Error getting collection times:', error);
+    reply.code(500).send({ error: 'Failed to get collection times' });
+  }
+});
+
+// Get available delivery times endpoint
+app.get('/api/store/delivery-times', async (req, reply) => {
+  try {
+    const { date, postcode } = req.query;
+    
+    if (!postcode) {
+      reply.code(400).send({ error: 'Postcode is required for delivery times' });
+      return;
+    }
+
+    const targetDate = date || new Date().toISOString().split('T')[0];
+    
+    // Get store config for delivery settings
+    const { data: storeConfig, error: configError } = await supabase
+      .from('store_config')
+      .select('delivery_lead_time_minutes, delivery_buffer_before_close_minutes')
+      .eq('id', 'default')
+      .single();
+
+    if (configError) throw configError;
+
+    const leadTimeMinutes = storeConfig.delivery_lead_time_minutes || 45;
+    const bufferMinutes = storeConfig.delivery_buffer_before_close_minutes || 15;
+    
+    // Get opening hours for the target date
+    const targetDay = new Date(targetDate).getDay();
+    const { data: hours, error: hoursError } = await supabase
+      .from('store_opening_hours')
+      .select('*')
+      .eq('day_of_week', targetDay)
+      .order('open_time');
+
+    if (hoursError) throw hoursError;
+
+    if (!hours || hours.length === 0) {
+      return { availableTimes: [], reason: 'Closed on this day' };
+    }
+
+    // Check if it's a holiday
+    const { data: holidays, error: holidayError } = await supabase
+      .from('store_holidays')
+      .select('*')
+      .eq('holiday_date', targetDate);
+
+    if (holidayError) throw holidayError;
+
+    const availableTimes = [];
+    const now = new Date();
+    const isToday = targetDate === now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 5);
+
+    hours.forEach(slot => {
+      if (slot.is_closed) return;
+
+      let startTime = slot.open_time;
+      let endTime = slot.close_time;
+
+      // If it's today, adjust start time based on lead time
+      if (isToday) {
+        const leadTimeDate = new Date();
+        leadTimeDate.setMinutes(leadTimeDate.getMinutes() + leadTimeMinutes);
+        const leadTimeStr = leadTimeDate.toTimeString().slice(0, 5);
+        
+        if (leadTimeStr > startTime) {
+          startTime = leadTimeStr;
+        }
+      }
+
+      // Adjust end time based on buffer
+      const endTimeDate = new Date(`2000-01-01T${endTime}:00`);
+      endTimeDate.setMinutes(endTimeDate.getMinutes() - bufferMinutes);
+      const adjustedEndTime = endTimeDate.toTimeString().slice(0, 5);
+
+      // Generate 15-minute intervals
+      let currentSlot = new Date(`2000-01-01T${startTime}:00`);
+      const endSlot = new Date(`2000-01-01T${adjustedEndTime}:00`);
+
+      while (currentSlot < endSlot) {
+        const timeStr = currentSlot.toTimeString().slice(0, 5);
+        
+        // Check if this time is within holiday period
+        const isHolidayTime = holidays && holidays.some(holiday => 
+          timeStr >= holiday.start_time && timeStr <= holiday.end_time
+        );
+
+        if (!isHolidayTime) {
+          availableTimes.push(timeStr);
+        }
+
+        currentSlot.setMinutes(currentSlot.getMinutes() + 15);
+      }
+    });
+
+    return { availableTimes };
+  } catch (error) {
+    app.log.error('Error getting delivery times:', error);
+    reply.code(500).send({ error: 'Failed to get delivery times' });
   }
 });
 

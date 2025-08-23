@@ -327,7 +327,10 @@ async function seedData() {
           { max_distance: 3.0, fee_if_subtotal_gte: 2, fee_if_subtotal_lt: 3 }
         ],
         no_service_beyond: 3.0
-      }
+      },
+      collection_lead_time_minutes: 15,
+      delivery_lead_time_minutes: 45,
+      delivery_buffer_before_close_minutes: 15
     };
 
     const { error: storeError } = await supabase
@@ -403,20 +406,23 @@ async function seedData() {
     if (hoursError) throw hoursError;
     console.log('Opening hours inserted successfully.');
 
-    // Insert holidays
+    // Insert holidays with different time slots
     console.log('Inserting holidays...');
     const holidays = [
       {
         holiday_date: '2025-08-24',
-        description: 'Summer Holiday'
+        start_time: '00:01',
+        end_time: '23:59'
       },
       {
         holiday_date: '2025-08-26',
-        description: 'Summer Holiday'
+        start_time: '08:00',
+        end_time: '22:00'
       },
       {
         holiday_date: '2025-09-01',
-        description: 'Bank Holiday'
+        start_time: '00:01',
+        end_time: '23:59'
       }
     ];
 
