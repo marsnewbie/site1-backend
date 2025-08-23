@@ -97,6 +97,22 @@ CREATE TABLE IF NOT EXISTS store_opening_hours (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Users table for customer accounts
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT,
+  telephone TEXT NOT NULL,
+  postcode TEXT,
+  address TEXT,
+  street_name TEXT,
+  city TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Store holidays table
 CREATE TABLE IF NOT EXISTS store_holidays (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -109,6 +125,7 @@ CREATE TABLE IF NOT EXISTS store_holidays (
 -- Orders table
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
   contact_name TEXT NOT NULL,
   contact_phone TEXT NOT NULL,
   contact_email TEXT,

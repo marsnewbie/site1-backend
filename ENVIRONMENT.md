@@ -19,6 +19,11 @@ MAPBOX_TOKEN=pk.xxxxxxxxxxxx
 MAPS_PROVIDER=mapbox
 ```
 
+### JWT 认证密钥
+```
+JWT_SECRET=your-secret-key-here
+```
+
 ## 设置步骤
 
 1. **创建 Supabase 项目**

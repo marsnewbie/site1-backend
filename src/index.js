@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import { supabase } from './lib/supabase.js';
 import { emailService } from './lib/email.js';
 import { quoteDelivery } from './services/delivery.js';
+import { hashPassword, comparePassword, generateToken, isValidEmail, isValidPassword } from './lib/auth.js';
+import { authenticateUser, optionalAuth } from './middleware/auth.js';
 
 // Create Fastify instance
 const app = Fastify({ logger: true });
@@ -165,29 +167,178 @@ app.post('/api/delivery/quote', async (req, reply) => {
   }
 });
 
-// Checkout endpoint (guest or logged in) — returns simple success without processing payment.
+// Checkout endpoint supporting three methods: guest, login, register
 app.post('/api/checkout', async (req, reply) => {
-  const {
-    mode = 'collection',
-    contact,
-    address,
-    cartItems,
-    subtotalPence = 0,
-    deliveryFeePence = 0,
-    totalPence = 0,
-    paymentMethod = 'card',
-  } = req.body || {};
-  
-  if (!contact || !contact.name || !contact.phone) {
-    reply.code(400).send({ error: 'Missing contact information' });
-    return;
-  }
-  if (!Array.isArray(cartItems) || cartItems.length === 0) {
-    reply.code(400).send({ error: 'Cart is empty' });
-    return;
-  }
-
   try {
+    const {
+      checkoutMethod, // 'guest', 'login', 'register'
+      mode = 'collection',
+      cartItems,
+      subtotalPence = 0,
+      deliveryFeePence = 0,
+      totalPence = 0,
+      paymentMethod = 'card',
+      // Guest checkout data
+      guestData,
+      // Login data
+      loginData,
+      // Registration data
+      registerData
+    } = req.body || {};
+
+    if (!Array.isArray(cartItems) || cartItems.length === 0) {
+      reply.code(400).send({ error: 'Cart is empty' });
+      return;
+    }
+
+    let user = null;
+    let contact = {};
+    let address = {};
+
+    // Handle different checkout methods
+    switch (checkoutMethod) {
+      case 'guest':
+        // Validate guest data
+        if (!guestData || !guestData.firstName || !guestData.email || !guestData.telephone) {
+          reply.code(400).send({ error: 'Missing required guest information' });
+          return;
+        }
+        if (mode === 'delivery' && (!guestData.postcode || !guestData.address)) {
+          reply.code(400).send({ error: 'Delivery address required for delivery mode' });
+          return;
+        }
+        
+        contact = {
+          name: `${guestData.firstName} ${guestData.lastName || ''}`.trim(),
+          email: guestData.email,
+          phone: guestData.telephone
+        };
+        address = {
+          postcode: guestData.postcode,
+          line1: guestData.address,
+          streetName: guestData.streetName,
+          city: guestData.city
+        };
+        break;
+
+      case 'login':
+        // Validate login data
+        if (!loginData || !loginData.email || !loginData.password) {
+          reply.code(400).send({ error: 'Email and password required' });
+          return;
+        }
+
+        // Authenticate user
+        const { data: loginUser, error: loginError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', loginData.email)
+          .single();
+
+        if (loginError || !loginUser) {
+          reply.code(401).send({ error: 'Invalid email or password' });
+          return;
+        }
+
+        const isValid = await comparePassword(loginData.password, loginUser.password_hash);
+        if (!isValid) {
+          reply.code(401).send({ error: 'Invalid email or password' });
+          return;
+        }
+
+        user = loginUser;
+        contact = {
+          name: `${user.first_name} ${user.last_name || ''}`.trim(),
+          email: user.email,
+          phone: user.telephone
+        };
+        address = {
+          postcode: user.postcode,
+          line1: user.address,
+          streetName: user.street_name,
+          city: user.city
+        };
+        break;
+
+      case 'register':
+        // Validate registration data
+        if (!registerData || !registerData.firstName || !registerData.email || 
+            !registerData.telephone || !registerData.password || !registerData.passwordConfirm) {
+          reply.code(400).send({ error: 'Missing required registration information' });
+          return;
+        }
+        if (mode === 'delivery' && (!registerData.postcode || !registerData.address)) {
+          reply.code(400).send({ error: 'Delivery address required for delivery mode' });
+          return;
+        }
+        if (!isValidEmail(registerData.email)) {
+          reply.code(400).send({ error: 'Invalid email format' });
+          return;
+        }
+        if (!isValidPassword(registerData.password)) {
+          reply.code(400).send({ error: 'Password must be at least 6 characters' });
+          return;
+        }
+        if (registerData.password !== registerData.passwordConfirm) {
+          reply.code(400).send({ error: 'Passwords do not match' });
+          return;
+        }
+
+        // Check if email already exists
+        const { data: existingUser, error: checkError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', registerData.email)
+          .single();
+
+        if (checkError && checkError.code !== 'PGRST116') {
+          throw checkError;
+        }
+
+        if (existingUser) {
+          reply.code(400).send({ error: 'Email already registered' });
+          return;
+        }
+
+        // Create new user
+        const passwordHash = await hashPassword(registerData.password);
+        const { data: newUser, error: createError } = await supabase
+          .from('users')
+          .insert({
+            email: registerData.email,
+            password_hash: passwordHash,
+            first_name: registerData.firstName,
+            last_name: registerData.lastName,
+            telephone: registerData.telephone,
+            postcode: registerData.postcode,
+            address: registerData.address,
+            street_name: registerData.streetName,
+            city: registerData.city
+          })
+          .select('id, email, first_name, last_name, telephone, postcode, address, street_name, city')
+          .single();
+
+        if (createError) throw createError;
+
+        user = newUser;
+        contact = {
+          name: `${user.first_name} ${user.last_name || ''}`.trim(),
+          email: user.email,
+          phone: user.telephone
+        };
+        address = {
+          postcode: user.postcode,
+          line1: user.address,
+          streetName: user.street_name,
+          city: user.city
+        };
+        break;
+
+      default:
+        reply.code(400).send({ error: 'Invalid checkout method' });
+        return;
+    }
+
     // Generate order ID
     const orderId = 'ORD' + Math.random().toString(36).slice(2, 10).toUpperCase();
     
@@ -196,12 +347,13 @@ app.post('/api/checkout', async (req, reply) => {
       .from('orders')
       .insert({
         id: orderId,
+        user_id: user?.id,
         contact_name: contact.name,
         contact_phone: contact.phone,
         contact_email: contact.email,
         mode,
-        postcode: address?.postcode,
-        address_line: address?.line1,
+        postcode: address.postcode,
+        address_line: address.line1,
         subtotal_pence: subtotalPence,
         delivery_fee_pence: deliveryFeePence,
         total_pence: totalPence,
@@ -230,7 +382,7 @@ app.post('/api/checkout', async (req, reply) => {
 
     if (itemsError) throw itemsError;
 
-    // Send confirmation email if email is provided
+    // Send confirmation email
     if (contact.email) {
       try {
         await emailService.sendOrderConfirmation({
@@ -246,12 +398,30 @@ app.post('/api/checkout', async (req, reply) => {
       }
     }
 
+    // Generate token for registered/logged in users
+    let token = null;
+    if (user) {
+      token = generateToken(user.id);
+    }
+
     return { 
-      ok: true, 
+      success: true, 
       orderId, 
       message: 'Order placed successfully', 
       paymentMethod,
-      emailSent: !!contact.email
+      emailSent: !!contact.email,
+      user: user ? {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        telephone: user.telephone,
+        postcode: user.postcode,
+        address: user.address,
+        streetName: user.street_name,
+        city: user.city
+      } : null,
+      token
     };
   } catch (error) {
     app.log.error('Checkout error:', error);
@@ -410,6 +580,159 @@ app.get('/api/store/holidays', async (req, reply) => {
   } catch (error) {
     app.log.error('Error fetching holidays:', error);
     reply.code(500).send({ error: 'Failed to fetch holidays' });
+  }
+});
+
+// User registration endpoint
+app.post('/api/auth/register', async (req, reply) => {
+  try {
+    const {
+      firstName,
+      lastName,
+      email,
+      telephone,
+      password,
+      passwordConfirm,
+      postcode,
+      address,
+      streetName,
+      city
+    } = req.body;
+
+    // Validation
+    if (!firstName || !email || !telephone || !password || !passwordConfirm) {
+      reply.code(400).send({ error: 'Missing required fields' });
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      reply.code(400).send({ error: 'Invalid email format' });
+      return;
+    }
+
+    if (!isValidPassword(password)) {
+      reply.code(400).send({ error: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    if (password !== passwordConfirm) {
+      reply.code(400).send({ error: 'Passwords do not match' });
+      return;
+    }
+
+    // Check if email already exists
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
+    }
+
+    if (existingUser) {
+      reply.code(400).send({ error: 'Email already registered' });
+      return;
+    }
+
+    // Hash password
+    const passwordHash = await hashPassword(password);
+
+    // Create user
+    const { data: user, error: createError } = await supabase
+      .from('users')
+      .insert({
+        email,
+        password_hash: passwordHash,
+        first_name: firstName,
+        last_name: lastName,
+        telephone,
+        postcode,
+        address,
+        street_name: streetName,
+        city
+      })
+      .select('id, email, first_name, last_name, telephone, postcode, address, street_name, city')
+      .single();
+
+    if (createError) throw createError;
+
+    // Generate token
+    const token = generateToken(user.id);
+
+    return {
+      success: true,
+      user,
+      token,
+      message: 'Registration successful'
+    };
+  } catch (error) {
+    app.log.error('Registration error:', error);
+    reply.code(500).send({ error: 'Registration failed' });
+  }
+});
+
+// User login endpoint
+app.post('/api/auth/login', async (req, reply) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      reply.code(400).send({ error: 'Email and password required' });
+      return;
+    }
+
+    // Get user
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (userError || !user) {
+      reply.code(401).send({ error: 'Invalid email or password' });
+      return;
+    }
+
+    // Check password
+    const isValid = await comparePassword(password, user.password_hash);
+    if (!isValid) {
+      reply.code(401).send({ error: 'Invalid email or password' });
+      return;
+    }
+
+    // Generate token
+    const token = generateToken(user.id);
+
+    // Remove password from response
+    const { password_hash, ...userWithoutPassword } = user;
+
+    return {
+      success: true,
+      user: userWithoutPassword,
+      token,
+      message: 'Login successful'
+    };
+  } catch (error) {
+    app.log.error('Login error:', error);
+    reply.code(500).send({ error: 'Login failed' });
+  }
+});
+
+// Get current user endpoint
+app.get('/api/auth/me', async (req, reply) => {
+  try {
+    const user = await authenticateUser(req, reply);
+    if (!user) return;
+
+    return {
+      success: true,
+      user
+    };
+  } catch (error) {
+    app.log.error('Get user error:', error);
+    reply.code(500).send({ error: 'Failed to get user' });
   }
 });
 
