@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS store_config (
   delivery_postcode_rules JSONB,
   delivery_distance_rules JSONB,
   collection_lead_time_minutes INTEGER DEFAULT 15,
+  collection_buffer_before_close_minutes INTEGER DEFAULT 15,
   delivery_lead_time_minutes INTEGER DEFAULT 45,
   delivery_buffer_before_close_minutes INTEGER DEFAULT 15,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

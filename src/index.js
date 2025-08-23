@@ -294,6 +294,7 @@ app.post('/api/store/update-time-settings', async (req, reply) => {
   try {
     const { 
       collectionLeadTimeMinutes, 
+      collectionBufferBeforeCloseMinutes,
       deliveryLeadTimeMinutes, 
       deliveryBufferBeforeCloseMinutes,
       storeId = 'default' 
@@ -303,6 +304,9 @@ app.post('/api/store/update-time-settings', async (req, reply) => {
     
     if (collectionLeadTimeMinutes !== undefined) {
       updateData.collection_lead_time_minutes = collectionLeadTimeMinutes;
+    }
+    if (collectionBufferBeforeCloseMinutes !== undefined) {
+      updateData.collection_buffer_before_close_minutes = collectionBufferBeforeCloseMinutes;
     }
     if (deliveryLeadTimeMinutes !== undefined) {
       updateData.delivery_lead_time_minutes = deliveryLeadTimeMinutes;
@@ -480,16 +484,17 @@ app.get('/api/store/collection-times', async (req, reply) => {
     const { date } = req.query;
     const targetDate = date || new Date().toISOString().split('T')[0];
     
-    // Get store config for lead time
+    // Get store config for lead time and buffer
     const { data: storeConfig, error: configError } = await supabase
       .from('store_config')
-      .select('collection_lead_time_minutes')
+      .select('collection_lead_time_minutes, collection_buffer_before_close_minutes')
       .eq('id', 'default')
       .single();
 
     if (configError) throw configError;
 
     const leadTimeMinutes = storeConfig.collection_lead_time_minutes || 15;
+    const bufferMinutes = storeConfig.collection_buffer_before_close_minutes || 15;
     
     // Get opening hours for the target date
     const targetDay = new Date(targetDate).getDay();
@@ -535,9 +540,14 @@ app.get('/api/store/collection-times', async (req, reply) => {
         }
       }
 
+      // Adjust end time based on buffer
+      const endTimeDate = new Date(`2000-01-01T${endTime}:00`);
+      endTimeDate.setMinutes(endTimeDate.getMinutes() - bufferMinutes);
+      const adjustedEndTime = endTimeDate.toTimeString().slice(0, 5);
+
       // Generate 15-minute intervals
       let currentSlot = new Date(`2000-01-01T${startTime}:00`);
-      const endSlot = new Date(`2000-01-01T${endTime}:00`);
+      const endSlot = new Date(`2000-01-01T${adjustedEndTime}:00`);
 
       while (currentSlot < endSlot) {
         const timeStr = currentSlot.toTimeString().slice(0, 5);

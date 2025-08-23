@@ -329,6 +329,7 @@ async function seedData() {
         no_service_beyond: 3.0
       },
       collection_lead_time_minutes: 15,
+      collection_buffer_before_close_minutes: 15,
       delivery_lead_time_minutes: 45,
       delivery_buffer_before_close_minutes: 15
     };
