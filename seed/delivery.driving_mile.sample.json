@@ -1,0 +1,13 @@
+{
+  "active_rule_type": "distance_bands",
+  "distance_bands": {
+    "provider": "mapbox",
+    "bands": [
+      { "max_miles": 1, "fee_if_subtotal_gbp_gte": 1.50, "fee_if_subtotal_gbp_lt": 2.00 },
+      { "max_miles": 2, "fee_if_subtotal_gbp_gte": 2.00, "fee_if_subtotal_gbp_lt": 2.50 },
+      { "max_miles": 3, "fee_if_subtotal_gbp_gte": 2.60, "fee_if_subtotal_gbp_lt": 3.10 }
+    ],
+    "no_service_beyond_miles": 3,
+    "min_order_threshold_gbp": 10
+  }
+}
