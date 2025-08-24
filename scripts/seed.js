@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { fileURLToPath } from 'url';
 import { supabase } from '../src/lib/supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
