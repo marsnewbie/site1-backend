@@ -71,7 +71,8 @@ async function seedData() {
           name: 'Aromatic Duck',
           description: 'Crispy aromatic duck with pancakes, spring onion & cucumber.',
           price_pence: 900,
-          display_order: 1
+          display_order: 1,
+          is_available: true
         },
         {
           id: 'item_set_meal_a',
@@ -79,7 +80,8 @@ async function seedData() {
           name: 'Set Meal A (for 2 people)',
           description: 'Complete meal for two people',
           price_pence: 1000,
-          display_order: 1
+          display_order: 1,
+          is_available: true
         }
       ];
 
