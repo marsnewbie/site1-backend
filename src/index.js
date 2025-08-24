@@ -1160,7 +1160,9 @@ app.post('/api/upload/image', async (req, reply) => {
 // Start server
 const port = Number(process.env.PORT || 3001);
 app.listen({ port, host: '0.0.0.0' }).then(() => {
-  console.log(`API running on http://localhost:${port}`);
+  const railwayUrl = process.env.RAILWAY_STATIC_URL || `http://localhost:${port}`;
+  console.log(`API running on ${railwayUrl}`);
+  console.log(`Server listening at http://0.0.0.0:${port}`);
 }).catch(err => {
   app.log.error(err);
   process.exit(1);
