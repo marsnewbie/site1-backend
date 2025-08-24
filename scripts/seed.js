@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { fileURLToPath } from 'url';
+import path from 'path';
 import { supabase } from '../src/lib/supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -8,34 +9,63 @@ const __dirname = path.dirname(__filename);
 
 async function checkIfEmpty() {
   try {
+    console.log('🔍 Checking if database is empty...');
+    
     // Check if categories table is empty
+    console.log('📋 Checking categories table...');
     const { data: categories, error: catError } = await supabase
       .from('categories')
       .select('id')
       .limit(1);
 
-    if (catError) throw catError;
+    if (catError) {
+      console.error('❌ Error checking categories table:', catError);
+      throw catError;
+    }
+
+    console.log(`📊 Categories found: ${categories.length}`);
 
     // Check if menu_items table is empty
+    console.log('🍽️ Checking menu_items table...');
     const { data: items, error: itemsError } = await supabase
       .from('menu_items')
       .select('id')
       .limit(1);
 
-    if (itemsError) throw itemsError;
+    if (itemsError) {
+      console.error('❌ Error checking menu_items table:', itemsError);
+      throw itemsError;
+    }
 
-    return {
+    console.log(`📊 Menu items found: ${items.length}`);
+
+    const result = {
       categories: categories.length === 0,
       items: items.length === 0
     };
+
+    console.log('✅ Database check completed:', result);
+    return result;
   } catch (error) {
-    console.error('Error checking database:', error);
+    console.error('❌ Error checking database:', error);
+    console.error('🔧 This might indicate a connection or permission issue');
     return { categories: true, items: true };
   }
 }
 
 async function seedData() {
   try {
+    // Check environment variables
+    console.log('🔧 Checking environment variables...');
+    console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? '✅ Set' : '❌ Missing');
+    console.log('SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Set' : '❌ Missing');
+    
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('❌ Missing required environment variables');
+      process.exit(1);
+    }
+    
+    console.log('✅ Environment variables check passed');
     console.log('Checking if database is empty...');
     const isEmpty = await checkIfEmpty();
     
@@ -48,17 +78,25 @@ async function seedData() {
 
     // Insert categories
     if (isEmpty.categories) {
-      console.log('Inserting categories...');
+      console.log('📝 Inserting categories...');
       const categories = [
         { id: 'cat_app', name: 'Appetisers' },
         { id: 'cat_set', name: 'Set Meals' }
       ];
-      const { error: catError } = await supabase
-        .from('categories')
-        .insert(categories);
+      console.log('📋 Categories to insert:', categories);
       
-      if (catError) throw catError;
-      console.log('Categories inserted successfully.');
+      const { data: catData, error: catError } = await supabase
+        .from('categories')
+        .insert(categories)
+        .select();
+      
+      if (catError) {
+        console.error('❌ Error inserting categories:', catError);
+        throw catError;
+      }
+      console.log('✅ Categories inserted successfully:', catData);
+    } else {
+      console.log('⏭️ Skipping categories insertion (table not empty)');
     }
 
     // Insert menu items
@@ -447,12 +485,25 @@ async function seedData() {
   }
 }
 
+// Main execution
+console.log('🚀 Starting seed script...');
+console.log('📅 Timestamp:', new Date().toISOString());
+console.log('🔧 Arguments:', process.argv);
+
 // Check if --if-empty flag is provided
 const ifEmptyOnly = process.argv.includes('--if-empty');
 
 if (ifEmptyOnly) {
-  seedData();
+  console.log('✅ --if-empty flag detected, proceeding with conditional seeding');
+  seedData().then(() => {
+    console.log('🎉 Seed script completed successfully!');
+    process.exit(0);
+  }).catch((error) => {
+    console.error('💥 Seed script failed:', error);
+    process.exit(1);
+  });
 } else {
-  console.log('Use --if-empty flag to only seed if database is empty');
+  console.log('❌ Use --if-empty flag to only seed if database is empty');
+  console.log('💡 Example: node scripts/seed.js --if-empty');
   process.exit(1);
 }
