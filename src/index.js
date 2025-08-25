@@ -600,22 +600,6 @@ app.get('/api/discounts', async (req, reply) => {
   }
 });
 
-// Get opening hours endpoint
-app.get('/api/store/hours', async (req, reply) => {
-  try {
-    const { data, error } = await supabase
-      .from('store_opening_hours')
-      .select('*')
-      .order('day_of_week, open_time');
-
-    if (error) throw error;
-
-    return data;
-  } catch (error) {
-    app.log.error('Error fetching opening hours:', error);
-    reply.code(500).send({ error: 'Failed to fetch opening hours' });
-  }
-});
 
 // Get holidays endpoint
 app.get('/api/store/holidays', async (req, reply) => {
