@@ -552,7 +552,10 @@ app.get('/api/store/config', async (req, reply) => {
 app.get('/api/store/hours', async (req, reply) => {
   try {
     const { date } = req.query;
-    const targetDate = date ? new Date(date) : new Date();
+    // Use UK timezone for store operations
+    const now = new Date();
+    const ukTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/London"}));
+    const targetDate = date ? new Date(date + 'T00:00:00') : ukTime;
     const dayOfWeek = targetDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
     
     const { data, error } = await supabase
@@ -775,10 +778,12 @@ app.get('/api/auth/me', async (req, reply) => {
 // Check if store is open endpoint
 app.get('/api/store/is-open', async (req, reply) => {
   try {
+    // Use UK timezone for store operations
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-    const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-    const currentDate = now.toISOString().split('T')[0];
+    const ukTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/London"}));
+    const dayOfWeek = ukTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const currentTime = ukTime.toTimeString().slice(0, 5); // HH:MM format
+    const currentDate = ukTime.toISOString().split('T')[0];
 
     // Check if today is a holiday
     const { data: holidays, error: holidayError } = await supabase
@@ -841,7 +846,10 @@ app.get('/api/store/is-open', async (req, reply) => {
 app.get('/api/store/collection-times', async (req, reply) => {
   try {
     const { date } = req.query;
-    const targetDate = date || new Date().toISOString().split('T')[0];
+    // Use UK timezone for store operations
+    const now = new Date();
+    const ukTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/London"}));
+    const targetDate = date || ukTime.toISOString().split('T')[0];
     
     // Get store config for lead time and buffer
     const { data: storeConfig, error: configError } = await supabase
@@ -878,9 +886,8 @@ app.get('/api/store/collection-times', async (req, reply) => {
     if (holidayError) throw holidayError;
 
     const availableTimes = [];
-    const now = new Date();
-    const isToday = targetDate === now.toISOString().split('T')[0];
-    const currentTime = now.toTimeString().slice(0, 5);
+    const isToday = targetDate === ukTime.toISOString().split('T')[0];
+    const currentTime = ukTime.toTimeString().slice(0, 5);
 
     hours.forEach(slot => {
       if (slot.is_closed) return;
@@ -890,7 +897,7 @@ app.get('/api/store/collection-times', async (req, reply) => {
 
       // If it's today, adjust start time based on lead time
       if (isToday) {
-        const leadTimeDate = new Date();
+        const leadTimeDate = new Date(ukTime);
         leadTimeDate.setMinutes(leadTimeDate.getMinutes() + leadTimeMinutes);
         const leadTimeStr = leadTimeDate.toTimeString().slice(0, 5);
         
@@ -941,7 +948,10 @@ app.get('/api/store/delivery-times', async (req, reply) => {
       return;
     }
 
-    const targetDate = date || new Date().toISOString().split('T')[0];
+    // Use UK timezone for store operations
+    const now = new Date();
+    const ukTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/London"}));
+    const targetDate = date || ukTime.toISOString().split('T')[0];
     
     // Get store config for delivery settings
     const { data: storeConfig, error: configError } = await supabase
@@ -978,9 +988,8 @@ app.get('/api/store/delivery-times', async (req, reply) => {
     if (holidayError) throw holidayError;
 
     const availableTimes = [];
-    const now = new Date();
-    const isToday = targetDate === now.toISOString().split('T')[0];
-    const currentTime = now.toTimeString().slice(0, 5);
+    const isToday = targetDate === ukTime.toISOString().split('T')[0];
+    const currentTime = ukTime.toTimeString().slice(0, 5);
 
     hours.forEach(slot => {
       if (slot.is_closed) return;
@@ -990,7 +999,7 @@ app.get('/api/store/delivery-times', async (req, reply) => {
 
       // If it's today, adjust start time based on lead time
       if (isToday) {
-        const leadTimeDate = new Date();
+        const leadTimeDate = new Date(ukTime);
         leadTimeDate.setMinutes(leadTimeDate.getMinutes() + leadTimeMinutes);
         const leadTimeStr = leadTimeDate.toTimeString().slice(0, 5);
         
