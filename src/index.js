@@ -548,6 +548,40 @@ app.get('/api/store/config', async (req, reply) => {
   }
 });
 
+// Get store opening hours endpoint
+app.get('/api/store/hours', async (req, reply) => {
+  try {
+    const { date } = req.query;
+    const targetDate = date ? new Date(date) : new Date();
+    const dayOfWeek = targetDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    const { data, error } = await supabase
+      .from('store_opening_hours')
+      .select('*')
+      .eq('day_of_week', dayOfWeek)
+      .eq('is_closed', false);
+      
+    if (error) throw error;
+    
+    // Format the hours for today
+    const todayHours = data.map(period => ({
+      open_time: period.open_time,
+      close_time: period.close_time,
+      formatted: `${period.open_time.substring(0,5)}-${period.close_time.substring(0,5)}`
+    }));
+    
+    return {
+      day_of_week: dayOfWeek,
+      date: targetDate.toISOString().split('T')[0],
+      is_closed: data.length === 0,
+      hours: todayHours
+    };
+  } catch (error) {
+    app.log.error('Error fetching opening hours:', error);
+    reply.code(500).send({ error: 'Failed to fetch opening hours' });
+  }
+});
+
 // Get discount rules endpoint
 app.get('/api/discounts', async (req, reply) => {
   try {
