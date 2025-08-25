@@ -66,6 +66,16 @@ app.get('/api/menu', async () => {
           .eq('item_id', item.id)
           .order('display_order');
 
+        // Get conditional options for this item
+        const { data: conditionalOptions, error: conditionalError } = await supabase
+          .from('menu_conditional_options')
+          .select(`
+            parent_option_id,
+            parent_choice_id,
+            dependent_option_id
+          `)
+          .in('parent_option_id', options.map(opt => opt.id));
+
         if (optionsError) {
           app.log.error(`Error fetching options for item ${item.id}:`, optionsError);
           return {
@@ -91,8 +101,23 @@ app.get('/api/menu', async () => {
               id: choice.id,
               name: choice.name,
               priceDelta: choice.price_delta_pence
-            }))
+            })),
+          // Add conditional logic info
+          isConditional: conditionalOptions ? conditionalOptions.some(cond => cond.dependent_option_id === option.id) : false,
+          dependsOnOption: conditionalOptions ? conditionalOptions.find(cond => cond.dependent_option_id === option.id)?.parent_option_id : null,
+          dependsOnChoice: conditionalOptions ? conditionalOptions.find(cond => cond.dependent_option_id === option.id)?.parent_choice_id : null
         }));
+
+        // Add conditional options data to the response
+        const conditionalMap = {};
+        if (conditionalOptions) {
+          conditionalOptions.forEach(cond => {
+            if (!conditionalMap[cond.parent_option_id]) {
+              conditionalMap[cond.parent_option_id] = {};
+            }
+            conditionalMap[cond.parent_option_id][cond.parent_choice_id] = cond.dependent_option_id;
+          });
+        }
 
         return {
           id: item.id,
@@ -101,7 +126,8 @@ app.get('/api/menu', async () => {
           price: item.price_pence,
           categoryId: item.category_id,
           imageUrl: item.image_url,
-          options: transformedOptions
+          options: transformedOptions,
+          conditionalOptions: conditionalMap
         };
       })
     );
