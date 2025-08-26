@@ -1475,6 +1475,62 @@ app.put('/api/auth/profile', { preHandler: authenticateUser }, async (req, reply
   }
 });
 
+// Change password endpoint (protected)
+app.put('/api/auth/change-password', { preHandler: authenticateUser }, async (req, reply) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    // Validate required fields
+    if (!currentPassword || !newPassword) {
+      return reply.code(400).send({ error: 'Current password and new password are required' });
+    }
+    
+    // Validate new password
+    if (!isValidPassword(newPassword)) {
+      return reply.code(400).send({ error: 'New password must be at least 6 characters' });
+    }
+    
+    // Get current user's password hash
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, password_hash')
+      .eq('id', req.user.id)
+      .single();
+    
+    if (userError || !user) {
+      return reply.code(404).send({ error: 'User not found' });
+    }
+    
+    // Verify current password
+    const isCurrentPasswordValid = await comparePassword(currentPassword, user.password_hash);
+    if (!isCurrentPasswordValid) {
+      return reply.code(400).send({ error: 'Current password is incorrect' });
+    }
+    
+    // Hash new password
+    const newPasswordHash = await hashPassword(newPassword);
+    
+    // Update password in database
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ 
+        password_hash: newPasswordHash,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.user.id);
+    
+    if (updateError) throw updateError;
+    
+    return {
+      success: true,
+      message: 'Password changed successfully'
+    };
+  } catch (error) {
+    app.log.error('Change password error:', error);
+    return reply.code(500).send({ error: 'Failed to change password' });
+  }
+});
+
 // Start server
 const port = Number(process.env.PORT || 3001);
 app.listen({ port, host: '0.0.0.0' }).then(() => {
