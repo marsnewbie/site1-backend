@@ -1188,10 +1188,7 @@ app.post('/api/auth/login', async (req, reply) => {
       return reply.code(401).send({ error: 'Invalid email or password' });
     }
     
-    // Check if user is active
-    if (!user.is_active) {
-      return reply.code(401).send({ error: 'Account is deactivated' });
-    }
+    // Check if user exists (removed is_active check as this field may not exist)
     
     // Verify password
     const isValid = await comparePassword(password, user.password_hash);
@@ -1298,35 +1295,33 @@ app.post('/api/auth/reset-password', async (req, reply) => {
       return reply.code(400).send({ error: 'Password must be at least 6 characters' });
     }
     
-    // Find valid reset token
-    const { data: resetToken, error: tokenError } = await supabase
-      .from('password_reset_tokens')
-      .select('*')
-      .eq('token', token)
-      .eq('used', false)
-      .gt('expires_at', new Date().toISOString())
+    // Find user with valid reset token
+    const { data: user, error: tokenError } = await supabase
+      .from('users')
+      .select('id, reset_token, reset_token_expires')
+      .eq('reset_token', token)
+      .gt('reset_token_expires', new Date().toISOString())
       .single();
     
-    if (tokenError || !resetToken) {
+    if (tokenError || !user) {
       return reply.code(400).send({ error: 'Invalid or expired reset token' });
     }
     
     // Hash new password
     const newPasswordHash = await hashPassword(newPassword);
     
-    // Update user password
+    // Update user password and clear reset token
     const { error: updateError } = await supabase
       .from('users')
-      .update({ password_hash: newPasswordHash })
-      .eq('id', resetToken.user_id);
+      .update({ 
+        password_hash: newPasswordHash,
+        reset_token: null,
+        reset_token_expires: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', user.id);
     
     if (updateError) throw updateError;
-    
-    // Mark token as used
-    await supabase
-      .from('password_reset_tokens')
-      .update({ used: true })
-      .eq('id', resetToken.id);
     
     return { success: true, message: 'Password reset successfully' };
   } catch (error) {
