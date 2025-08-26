@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { fileURLToPath } from 'url';
-import path from 'path';
 import { supabase } from '../src/lib/supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -9,63 +8,34 @@ const __dirname = path.dirname(__filename);
 
 async function checkIfEmpty() {
   try {
-    console.log('🔍 Checking if database is empty...');
-    
     // Check if categories table is empty
-    console.log('📋 Checking categories table...');
     const { data: categories, error: catError } = await supabase
       .from('categories')
       .select('id')
       .limit(1);
 
-    if (catError) {
-      console.error('❌ Error checking categories table:', catError);
-      throw catError;
-    }
-
-    console.log(`📊 Categories found: ${categories.length}`);
+    if (catError) throw catError;
 
     // Check if menu_items table is empty
-    console.log('🍽️ Checking menu_items table...');
     const { data: items, error: itemsError } = await supabase
       .from('menu_items')
       .select('id')
       .limit(1);
 
-    if (itemsError) {
-      console.error('❌ Error checking menu_items table:', itemsError);
-      throw itemsError;
-    }
+    if (itemsError) throw itemsError;
 
-    console.log(`📊 Menu items found: ${items.length}`);
-
-    const result = {
+    return {
       categories: categories.length === 0,
       items: items.length === 0
     };
-
-    console.log('✅ Database check completed:', result);
-    return result;
   } catch (error) {
-    console.error('❌ Error checking database:', error);
-    console.error('🔧 This might indicate a connection or permission issue');
+    console.error('Error checking database:', error);
     return { categories: true, items: true };
   }
 }
 
 async function seedData() {
   try {
-    // Check environment variables
-    console.log('🔧 Checking environment variables...');
-    console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? '✅ Set' : '❌ Missing');
-    console.log('SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Set' : '❌ Missing');
-    
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error('❌ Missing required environment variables');
-      process.exit(1);
-    }
-    
-    console.log('✅ Environment variables check passed');
     console.log('Checking if database is empty...');
     const isEmpty = await checkIfEmpty();
     
@@ -78,25 +48,17 @@ async function seedData() {
 
     // Insert categories
     if (isEmpty.categories) {
-      console.log('📝 Inserting categories...');
+      console.log('Inserting categories...');
       const categories = [
         { id: 'cat_app', name: 'Appetisers' },
         { id: 'cat_set', name: 'Set Meals' }
       ];
-      console.log('📋 Categories to insert:', categories);
-      
-      const { data: catData, error: catError } = await supabase
+      const { error: catError } = await supabase
         .from('categories')
-        .insert(categories)
-        .select();
+        .insert(categories);
       
-      if (catError) {
-        console.error('❌ Error inserting categories:', catError);
-        throw catError;
-      }
-      console.log('✅ Categories inserted successfully:', catData);
-    } else {
-      console.log('⏭️ Skipping categories insertion (table not empty)');
+      if (catError) throw catError;
+      console.log('Categories inserted successfully.');
     }
 
     // Insert menu items
@@ -119,6 +81,15 @@ async function seedData() {
           description: 'Complete meal for two people',
           price_pence: 1000,
           display_order: 1,
+          is_available: true
+        },
+        {
+          id: 'item_set_meal_b',
+          category_id: 'cat_set',
+          name: 'Set Meal B (for 4 people)',
+          description: 'Complete meal for four people',
+          price_pence: 1800,
+          display_order: 2,
           is_available: true
         }
       ];
@@ -329,6 +300,145 @@ async function seedData() {
       
       if (chickenConditionalError) throw chickenConditionalError;
 
+      // ===== SET MEAL B CONFIGURATION =====
+      console.log('Creating Set Meal B options...');
+      
+      // Set Meal B - Step 1 Option (Burger selection - Radio, Required)
+      const { data: mealBStep1Option, error: mealBStep1Error } = await supabase
+        .from('menu_options')
+        .insert({
+          item_id: 'item_set_meal_b',
+          name: 'Step 1 Option',
+          type: 'radio',
+          required: true,
+          display_order: 1
+        })
+        .select()
+        .single();
+      
+      if (mealBStep1Error) throw mealBStep1Error;
+
+      // Step 1 choices
+      const { data: mealBStep1Choices, error: mealBStep1ChoicesError } = await supabase
+        .from('menu_option_choices')
+        .insert([
+          {
+            option_id: mealBStep1Option.id,
+            name: 'Fish Burger',
+            price_delta_pence: 0,
+            display_order: 1
+          },
+          {
+            option_id: mealBStep1Option.id,
+            name: 'Ham Burger',
+            price_delta_pence: 100,
+            display_order: 2
+          }
+        ])
+        .select();
+      
+      if (mealBStep1ChoicesError) throw mealBStep1ChoicesError;
+
+      // Step 2 Option (Fish path - Checkbox, Required)
+      const { data: mealBStep2FishOption, error: mealBStep2FishError } = await supabase
+        .from('menu_options')
+        .insert({
+          item_id: 'item_set_meal_b',
+          name: 'Step 2 Option (Fish)',
+          type: 'checkbox',
+          required: true,
+          display_order: 2
+        })
+        .select()
+        .single();
+      
+      if (mealBStep2FishError) throw mealBStep2FishError;
+
+      // Fish path choices
+      const { error: mealBFishChoicesError } = await supabase
+        .from('menu_option_choices')
+        .insert([
+          {
+            option_id: mealBStep2FishOption.id,
+            name: 'Boiled Rice',
+            price_delta_pence: 0,
+            display_order: 1
+          },
+          {
+            option_id: mealBStep2FishOption.id,
+            name: 'Fried Rice',
+            price_delta_pence: 100,
+            display_order: 2
+          }
+        ]);
+      
+      if (mealBFishChoicesError) throw mealBFishChoicesError;
+
+      // Step 2 Option (Ham path - Checkbox, Required)
+      const { data: mealBStep2HamOption, error: mealBStep2HamError } = await supabase
+        .from('menu_options')
+        .insert({
+          item_id: 'item_set_meal_b',
+          name: 'Step 2 Option (Ham)',
+          type: 'checkbox',
+          required: true,
+          display_order: 3
+        })
+        .select()
+        .single();
+      
+      if (mealBStep2HamError) throw mealBStep2HamError;
+
+      // Ham path choices
+      const { error: mealBHamChoicesError } = await supabase
+        .from('menu_option_choices')
+        .insert([
+          {
+            option_id: mealBStep2HamOption.id,
+            name: 'Chips',
+            price_delta_pence: 0,
+            display_order: 1
+          },
+          {
+            option_id: mealBStep2HamOption.id,
+            name: 'Noodle',
+            price_delta_pence: 150,
+            display_order: 2
+          }
+        ]);
+      
+      if (mealBHamChoicesError) throw mealBHamChoicesError;
+
+      // Set up conditional logic - Fish Burger → Fish options
+      const fishBurger = mealBStep1Choices.find(c => c.name === 'Fish Burger');
+      const hamBurger = mealBStep1Choices.find(c => c.name === 'Ham Burger');
+      
+      const { error: fishConditionalError } = await supabase
+        .from('menu_conditional_options')
+        .insert([
+          {
+            parent_option_id: mealBStep1Option.id,
+            parent_choice_id: fishBurger.id,
+            dependent_option_id: mealBStep2FishOption.id
+          }
+        ]);
+      
+      if (fishConditionalError) throw fishConditionalError;
+
+      // Set up conditional logic - Ham Burger → Ham options
+      const { error: hamConditionalError } = await supabase
+        .from('menu_conditional_options')
+        .insert([
+          {
+            parent_option_id: mealBStep1Option.id,
+            parent_choice_id: hamBurger.id,
+            dependent_option_id: mealBStep2HamOption.id
+          }
+        ]);
+      
+      if (hamConditionalError) throw hamConditionalError;
+
+      console.log('Set Meal B options created successfully.');
       console.log('Menu options inserted successfully.');
     }
 
@@ -485,25 +595,12 @@ async function seedData() {
   }
 }
 
-// Main execution
-console.log('🚀 Starting seed script...');
-console.log('📅 Timestamp:', new Date().toISOString());
-console.log('🔧 Arguments:', process.argv);
-
 // Check if --if-empty flag is provided
 const ifEmptyOnly = process.argv.includes('--if-empty');
 
 if (ifEmptyOnly) {
-  console.log('✅ --if-empty flag detected, proceeding with conditional seeding');
-  seedData().then(() => {
-    console.log('🎉 Seed script completed successfully!');
-    process.exit(0);
-  }).catch((error) => {
-    console.error('💥 Seed script failed:', error);
-    process.exit(1);
-  });
+  seedData();
 } else {
-  console.log('❌ Use --if-empty flag to only seed if database is empty');
-  console.log('💡 Example: node scripts/seed.js --if-empty');
+  console.log('Use --if-empty flag to only seed if database is empty');
   process.exit(1);
 }

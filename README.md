@@ -1,37 +1,55 @@
 # Site1 Backend
 
-外卖点餐系统后端 API
+A Fastify-based backend API for the restaurant ordering system.
 
-## 本地开发
+## Local Development
 
-1. 安装依赖：
+1. Install dependencies:
 ```bash
 npm install
 ```
 
-2. 启动服务器：
+2. Set up environment variables:
+```bash
+cp .env.example .env
+# Edit .env with your Supabase credentials
+```
+
+3. Run the development server:
 ```bash
 npm start
 ```
 
-服务器将在 http://localhost:3001 运行
+## Railway Deployment
 
-## Railway 部署
+This project is configured for Railway deployment with automatic database seeding.
 
-1. 在 Railway 中导入此 GitHub 仓库
-2. Railway 会自动检测 Node.js 项目并部署
-3. 部署完成后，Railway 会提供一个 URL，例如：https://your-app.railway.app
+### Environment Variables Required:
+- `SUPABASE_URL` - Your Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key
+- `DATABASE_URL` - Your Supabase database connection string
 
-## API 端点
+### Postdeploy Script:
+The `postdeploy` script automatically seeds the database if it's empty.
 
-- `GET /health` - 健康检查
-- `GET /api/menu` - 获取菜单数据
-- `POST /api/cart/create` - 创建购物车
-- `POST /api/cart/:id/add` - 添加商品到购物车
-- `POST /api/delivery/quote` - 获取配送报价
-- `POST /api/checkout` - 提交订单
+## API Endpoints
 
-## 数据
+- `GET /health` - Health check
+- `GET /api/menu` - Get menu items and categories
+- `POST /api/cart/create` - Create a new cart
+- `POST /api/cart/:id/add` - Add item to cart
+- `POST /api/checkout` - Process checkout
 
-- 菜单数据存储在 `seed/menu.sample.json`
-- 配送配置存储在 `seed/delivery.*.json`
+## Database Schema
+
+The database includes tables for:
+- Categories
+- Menu items
+- Menu options and choices
+- Store configuration
+- Orders and order items
+- Users
+- Discount rules
+- Opening hours and holidays
+
+Updated: 2025-01-20

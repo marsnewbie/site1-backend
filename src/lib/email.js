@@ -49,7 +49,7 @@ export const emailService = {
 
     try {
       const { data, error } = await resend.emails.send({
-        from: 'orders@your-takeaway.com',
+        from: 'China Palace <orders@ringorderai.com>',
         to: contact.email,
         subject: `Order Confirmation - ${orderId}`,
         html: html,
@@ -83,7 +83,7 @@ export const emailService = {
 
     try {
       const { data, error } = await resend.emails.send({
-        from: 'orders@your-takeaway.com',
+        from: 'China Palace <orders@ringorderai.com>',
         to: contact.email,
         subject: `Order Update - ${orderId}`,
         html: html,
