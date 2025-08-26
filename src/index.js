@@ -584,30 +584,49 @@ app.get('/api/store/hours', async (req, reply) => {
     const targetDate = date ? new Date(date + 'T00:00:00') : ukTime;
     const dayOfWeek = targetDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
     
+    app.log.info(`Fetching opening hours for day ${dayOfWeek} (${targetDate.toISOString().split('T')[0]})`);
+    
     const { data, error } = await supabase
       .from('store_opening_hours')
       .select('*')
-      .eq('day_of_week', dayOfWeek)
-      .eq('is_closed', false);
+      .eq('day_of_week', dayOfWeek);
       
-    if (error) throw error;
+    if (error) {
+      app.log.error('Supabase error fetching opening hours:', error);
+      throw error;
+    }
     
-    // Format the hours for today
-    const todayHours = data.map(period => ({
+    app.log.info(`Found ${data.length} opening hours records for day ${dayOfWeek}:`, data);
+    
+    // Filter out closed periods and format the hours
+    const openHours = data.filter(period => !period.is_closed);
+    const todayHours = openHours.map(period => ({
       open_time: period.open_time,
       close_time: period.close_time,
       formatted: `${period.open_time.substring(0,5)}-${period.close_time.substring(0,5)}`
     }));
     
-    return {
+    const result = {
       day_of_week: dayOfWeek,
       date: targetDate.toISOString().split('T')[0],
-      is_closed: data.length === 0,
+      isOpen: todayHours.length > 0,
+      is_closed: todayHours.length === 0,
       hours: todayHours
     };
+    
+    app.log.info('Returning opening hours result:', result);
+    return result;
   } catch (error) {
     app.log.error('Error fetching opening hours:', error);
-    reply.code(500).send({ error: 'Failed to fetch opening hours' });
+    // Return a fallback response instead of throwing
+    return {
+      day_of_week: new Date().getDay(),
+      date: new Date().toISOString().split('T')[0],
+      isOpen: false,
+      is_closed: true,
+      hours: [],
+      error: 'Failed to fetch opening hours'
+    };
   }
 });
 
