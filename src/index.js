@@ -1227,7 +1227,301 @@ app.post('/api/upload/image', async (req, reply) => {
   }
 });
 
-// TODO: checkout endpoints, printing ACK, etc. For brevity we stub them.
+// ===== USER AUTHENTICATION ENDPOINTS =====
+
+// User login endpoint
+app.post('/api/auth/login', async (req, reply) => {
+  try {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return reply.code(400).send({ error: 'Email and password are required' });
+    }
+    
+    // Find user by email
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase().trim())
+      .single();
+    
+    if (userError || !user) {
+      return reply.code(401).send({ error: 'Invalid email or password' });
+    }
+    
+    // Check if user is active
+    if (!user.is_active) {
+      return reply.code(401).send({ error: 'Account is deactivated' });
+    }
+    
+    // Verify password
+    const isValid = await comparePassword(password, user.password_hash);
+    if (!isValid) {
+      return reply.code(401).send({ error: 'Invalid email or password' });
+    }
+    
+    // Update last login time
+    await supabase
+      .from('users')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', user.id);
+    
+    // Generate JWT token
+    const token = generateToken(user.id);
+    
+    // Return user data and token
+    return {
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        telephone: user.telephone,
+        postcode: user.postcode,
+        address: user.address,
+        streetName: user.street_name,
+        city: user.city
+      }
+    };
+  } catch (error) {
+    app.log.error('Login error:', error);
+    return reply.code(500).send({ error: 'Internal server error' });
+  }
+});
+
+// Forgot password endpoint
+app.post('/api/auth/forgot-password', async (req, reply) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return reply.code(400).send({ error: 'Email is required' });
+    }
+    
+    // Find user by email
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, email, first_name')
+      .eq('email', email.toLowerCase().trim())
+      .single();
+    
+    if (userError || !user) {
+      // Don't reveal if email exists or not
+      return { success: true, message: 'If the email exists, a reset link has been sent' };
+    }
+    
+    // Generate reset token
+    const resetToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour
+    
+    // Store reset token
+    const { error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .insert({
+        user_id: user.id,
+        token: resetToken,
+        expires_at: expiresAt
+      });
+    
+    if (tokenError) throw tokenError;
+    
+    // Send reset email
+    try {
+      await emailService.sendPasswordResetEmail({
+        email: user.email,
+        firstName: user.first_name,
+        resetToken
+      });
+    } catch (emailError) {
+      app.log.error('Password reset email error:', emailError);
+      // Don't fail the request if email fails
+    }
+    
+    return { success: true, message: 'If the email exists, a reset link has been sent' };
+  } catch (error) {
+    app.log.error('Forgot password error:', error);
+    return reply.code(500).send({ error: 'Internal server error' });
+  }
+});
+
+// Reset password endpoint
+app.post('/api/auth/reset-password', async (req, reply) => {
+  try {
+    const { token, newPassword } = req.body;
+    
+    if (!token || !newPassword) {
+      return reply.code(400).send({ error: 'Token and new password are required' });
+    }
+    
+    if (!isValidPassword(newPassword)) {
+      return reply.code(400).send({ error: 'Password must be at least 6 characters' });
+    }
+    
+    // Find valid reset token
+    const { data: resetToken, error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .select('*')
+      .eq('token', token)
+      .eq('used', false)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+    
+    if (tokenError || !resetToken) {
+      return reply.code(400).send({ error: 'Invalid or expired reset token' });
+    }
+    
+    // Hash new password
+    const newPasswordHash = await hashPassword(newPassword);
+    
+    // Update user password
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password_hash: newPasswordHash })
+      .eq('id', resetToken.user_id);
+    
+    if (updateError) throw updateError;
+    
+    // Mark token as used
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('id', resetToken.id);
+    
+    return { success: true, message: 'Password reset successfully' };
+  } catch (error) {
+    app.log.error('Reset password error:', error);
+    return reply.code(500).send({ error: 'Internal server error' });
+  }
+});
+
+// Get current user endpoint (protected)
+app.get('/api/auth/me', { preHandler: authenticateUser }, async (req, reply) => {
+  return {
+    success: true,
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      firstName: req.user.first_name,
+      lastName: req.user.last_name,
+      telephone: req.user.telephone,
+      postcode: req.user.postcode,
+      address: req.user.address,
+      streetName: req.user.street_name,
+      city: req.user.city
+    }
+  };
+});
+
+// Get user order history (protected)
+app.get('/api/orders/history', { preHandler: authenticateUser }, async (req, reply) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+    
+    // Get user's orders
+    const { data: orders, error: ordersError } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        mode,
+        subtotal_pence,
+        delivery_fee_pence,
+        discount_pence,
+        total_pence,
+        payment_method,
+        status,
+        comment,
+        time_placed,
+        created_at,
+        order_items (
+          id,
+          item_name,
+          quantity,
+          unit_price_pence,
+          total_price_pence,
+          modifiers
+        )
+      `)
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    
+    if (ordersError) throw ordersError;
+    
+    return {
+      success: true,
+      orders: orders || [],
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: orders?.length || 0
+      }
+    };
+  } catch (error) {
+    app.log.error('Order history error:', error);
+    return reply.code(500).send({ error: 'Failed to fetch order history' });
+  }
+});
+
+// Update user profile (protected)
+app.put('/api/users/profile', { preHandler: authenticateUser }, async (req, reply) => {
+  try {
+    const {
+      firstName,
+      lastName,
+      telephone,
+      postcode,
+      address,
+      streetName,
+      city
+    } = req.body;
+    
+    // Validate required fields
+    if (!firstName || !telephone) {
+      return reply.code(400).send({ error: 'First name and telephone are required' });
+    }
+    
+    // Update user profile
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update({
+        first_name: firstName,
+        last_name: lastName,
+        telephone,
+        postcode,
+        address,
+        street_name: streetName,
+        city,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.user.id)
+      .select('id, email, first_name, last_name, telephone, postcode, address, street_name, city')
+      .single();
+    
+    if (updateError) throw updateError;
+    
+    return {
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        firstName: updatedUser.first_name,
+        lastName: updatedUser.last_name,
+        telephone: updatedUser.telephone,
+        postcode: updatedUser.postcode,
+        address: updatedUser.address,
+        streetName: updatedUser.street_name,
+        city: updatedUser.city
+      }
+    };
+  } catch (error) {
+    app.log.error('Profile update error:', error);
+    return reply.code(500).send({ error: 'Failed to update profile' });
+  }
+});
 
 // Start server
 const port = Number(process.env.PORT || 3001);

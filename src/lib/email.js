@@ -67,6 +67,55 @@ export const emailService = {
     }
   },
 
+  // Send password reset email
+  sendPasswordResetEmail: async ({ email, firstName, resetToken }) => {
+    const resetUrl = `${process.env.FRONTEND_URL || 'https://site1-front-0822.vercel.app'}/reset-password?token=${resetToken}`;
+    
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Password Reset - China Palace</h2>
+        <p>Dear ${firstName},</p>
+        <p>You have requested to reset your password for your China Palace account.</p>
+        
+        <p>Click the button below to reset your password:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}" 
+             style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            Reset Password
+          </a>
+        </div>
+        
+        <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
+        <p style="word-break: break-all; color: #666;">${resetUrl}</p>
+        
+        <p><strong>This link will expire in 1 hour.</strong></p>
+        
+        <p>If you didn't request this password reset, please ignore this email. Your password will remain unchanged.</p>
+        
+        <p>Best regards,<br>China Palace Team</p>
+      </div>
+    `;
+
+    try {
+      const { data, error } = await resend.emails.send({
+        from: 'China Palace <orders@ringorderai.com>',
+        to: email,
+        subject: 'Password Reset - China Palace',
+        html: html,
+      });
+
+      if (error) {
+        console.error('Password reset email error:', error);
+        return { success: false, error };
+      }
+
+      return { success: true, data };
+    } catch (error) {
+      console.error('Password reset email service error:', error);
+      return { success: false, error };
+    }
+  },
+
   // Send order status update
   sendOrderUpdate: async (orderData, status) => {
     const { contact, orderId } = orderData;
