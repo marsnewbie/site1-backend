@@ -757,68 +757,7 @@ app.post('/api/auth/register', async (req, reply) => {
   }
 });
 
-// User login endpoint
-app.post('/api/auth/login', async (req, reply) => {
-  try {
-    const { email, password } = req.body;
 
-    if (!email || !password) {
-      reply.code(400).send({ error: 'Email and password required' });
-      return;
-    }
-
-    // Get user
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .single();
-
-    if (userError || !user) {
-      reply.code(401).send({ error: 'Invalid email or password' });
-      return;
-    }
-
-    // Check password
-    const isValid = await comparePassword(password, user.password_hash);
-    if (!isValid) {
-      reply.code(401).send({ error: 'Invalid email or password' });
-      return;
-    }
-
-    // Generate token
-    const token = generateToken(user.id);
-
-    // Remove password from response
-    const { password_hash, ...userWithoutPassword } = user;
-
-    return {
-      success: true,
-      user: userWithoutPassword,
-      token,
-      message: 'Login successful'
-    };
-  } catch (error) {
-    app.log.error('Login error:', error);
-    reply.code(500).send({ error: 'Login failed' });
-  }
-});
-
-// Get current user endpoint
-app.get('/api/auth/me', async (req, reply) => {
-  try {
-    const user = await authenticateUser(req, reply);
-    if (!user) return;
-
-    return {
-      success: true,
-      user
-    };
-  } catch (error) {
-    app.log.error('Get user error:', error);
-    reply.code(500).send({ error: 'Failed to get user' });
-  }
-});
 
 // Check if store is open endpoint
 app.get('/api/store/is-open', async (req, reply) => {
@@ -1414,8 +1353,26 @@ app.get('/api/auth/me', { preHandler: authenticateUser }, async (req, reply) => 
   };
 });
 
+// Get user profile endpoint (protected) - alias for /me
+app.get('/api/auth/profile', { preHandler: authenticateUser }, async (req, reply) => {
+  return {
+    success: true,
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      firstName: req.user.first_name,
+      lastName: req.user.last_name,
+      telephone: req.user.telephone,
+      postcode: req.user.postcode,
+      address: req.user.address,
+      streetName: req.user.street_name,
+      city: req.user.city
+    }
+  };
+});
+
 // Get user order history (protected)
-app.get('/api/orders/history', { preHandler: authenticateUser }, async (req, reply) => {
+app.get('/api/auth/order-history', { preHandler: authenticateUser }, async (req, reply) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
@@ -1466,7 +1423,7 @@ app.get('/api/orders/history', { preHandler: authenticateUser }, async (req, rep
 });
 
 // Update user profile (protected)
-app.put('/api/users/profile', { preHandler: authenticateUser }, async (req, reply) => {
+app.put('/api/auth/profile', { preHandler: authenticateUser }, async (req, reply) => {
   try {
     const {
       firstName,
