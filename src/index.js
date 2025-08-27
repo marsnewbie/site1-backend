@@ -1271,14 +1271,14 @@ app.post('/api/auth/forgot-password', async (req, reply) => {
     const resetToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
     const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour
     
-    // Store reset token
+    // Store reset token in users table
     const { error: tokenError } = await supabase
-      .from('password_reset_tokens')
-      .insert({
-        user_id: user.id,
-        token: resetToken,
-        expires_at: expiresAt
-      });
+      .from('users')
+      .update({
+        reset_token: resetToken,
+        reset_token_expires: expiresAt
+      })
+      .eq('id', user.id);
     
     if (tokenError) throw tokenError;
     

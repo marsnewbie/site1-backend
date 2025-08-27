@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS users (
   city TEXT,
   reset_token TEXT,
   reset_token_expires TIMESTAMP WITH TIME ZONE,
+  last_login_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
