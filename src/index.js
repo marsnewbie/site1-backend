@@ -194,7 +194,8 @@ app.post('/api/delivery/quote', async (req, reply) => {
 });
 
 // Checkout endpoint supporting three methods: guest, login, register
-app.post('/api/checkout', async (req, reply) => {
+// Also supports authenticated users via optional auth
+app.post('/api/checkout', { preHandler: optionalAuth }, async (req, reply) => {
   try {
     const {
       checkoutMethod, // 'guest', 'login', 'register'
@@ -223,9 +224,26 @@ app.post('/api/checkout', async (req, reply) => {
     let contact = {};
     let address = {};
 
-    // Handle different checkout methods
-    switch (checkoutMethod) {
-      case 'guest':
+    // If user is authenticated, use their information directly
+    if (req.user) {
+      user = req.user;
+      contact = {
+        firstName: user.first_name,
+        lastName: user.last_name,
+        name: `${user.first_name} ${user.last_name || ''}`.trim(),
+        email: user.email,
+        phone: user.telephone
+      };
+      address = {
+        postcode: user.postcode,
+        line1: user.address,
+        streetName: user.street_name,
+        city: user.city
+      };
+    } else {
+      // Handle different checkout methods for non-authenticated users
+      switch (checkoutMethod) {
+        case 'guest':
         // Validate guest data
         if (!guestData || !guestData.firstName || !guestData.email || !guestData.telephone) {
           reply.code(400).send({ error: 'Missing required guest information' });
@@ -368,9 +386,10 @@ app.post('/api/checkout', async (req, reply) => {
         };
         break;
 
-      default:
-        reply.code(400).send({ error: 'Invalid checkout method' });
-        return;
+        default:
+          reply.code(400).send({ error: 'Invalid checkout method' });
+          return;
+      }
     }
 
     // Generate order ID
