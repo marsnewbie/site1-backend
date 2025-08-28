@@ -50,8 +50,8 @@ async function seedData() {
     if (isEmpty.categories) {
       console.log('Inserting categories...');
       const categories = [
-        { id: 'cat_app', name: 'Appetisers' },
-        { id: 'cat_set', name: 'Set Meals' }
+        { id: 'cat_app', name: 'Appetisers', description: 'Start your meal with our delicious appetisers and starters' },
+        { id: 'cat_set', name: 'Set Meals', description: 'Complete meals perfect for sharing with family and friends' }
       ];
       const { error: catError } = await supabase
         .from('categories')
