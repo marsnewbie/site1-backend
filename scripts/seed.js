@@ -50,8 +50,27 @@ async function seedData() {
     if (isEmpty.categories) {
       console.log('Inserting categories...');
       const categories = [
-        { id: 'cat_app', name: 'Appetisers', description: 'Start your meal with our delicious appetisers and starters' },
-        { id: 'cat_set', name: 'Set Meals', description: 'Complete meals perfect for sharing with family and friends' }
+        { id: 'cat_app', name: 'Appetisers', description: 'Start your meal with our delicious appetisers and starters', display_order: 1 },
+        { id: 'cat_set', name: 'Set Meals', description: 'Complete meals perfect for sharing with family and friends', display_order: 2 },
+        { id: 'cat_soup', name: 'Soup', description: '', display_order: 3 },
+        { id: 'cat_new_dishes', name: 'New Dishes', description: '', display_order: 4 },
+        { id: 'cat_extra_portions', name: 'Extra Portions', description: '', display_order: 5 },
+        { id: 'cat_rice', name: 'Rice', description: '', display_order: 6 },
+        { id: 'cat_curry', name: 'Curry Dishes', description: 'with Onions and Peas', display_order: 7 },
+        { id: 'cat_chow_mein', name: 'Chow Mein Dishes (Long Tray)', description: 'Noodles with Onions & Beansprouts', display_order: 8 },
+        { id: 'cat_chop_suey', name: 'Chop Suey Dishes', description: '(Beansprouts, Bamboo Shoots & Water Chestnuts, Mushrooms, Onions)', display_order: 9 },
+        { id: 'cat_sweet_sour', name: 'Sweet & Sour Dishes', description: '', display_order: 10 },
+        { id: 'cat_king_prawn', name: 'King Prawn Dishes', description: '', display_order: 11 },
+        { id: 'cat_duck', name: 'Duck Dishes', description: '', display_order: 12 },
+        { id: 'cat_chicken', name: 'Chicken Dishes', description: '', display_order: 13 },
+        { id: 'cat_beef', name: 'Beef Dishes', description: '', display_order: 14 },
+        { id: 'cat_roast_pork', name: 'Roast Pork Dishes', description: '', display_order: 15 },
+        { id: 'cat_egg_foo_yung', name: 'Egg Foo Yung Dishes', description: '(Chinese Omelette with Mushrooms, Onions & Peas)', display_order: 16 },
+        { id: 'cat_english', name: 'English Dishes', description: '(Grilled Steak, Omelette etc.)', display_order: 17 },
+        { id: 'cat_special_dinners', name: 'Special Dinners', description: '', display_order: 18 },
+        { id: 'cat_cantonese', name: 'Cantonese Cuisine', description: '', display_order: 19 },
+        { id: 'cat_set_recommended', name: 'Recommended Set Dinners', description: '', display_order: 20 },
+        { id: 'cat_set_chef', name: 'Chef\'s Special Set Dinners', description: '', display_order: 21 }
       ];
       const { error: catError } = await supabase
         .from('categories')
