@@ -30,7 +30,7 @@ app.get('/api/menu', async () => {
     // Get categories
     const { data: categories, error: catError } = await supabase
       .from('categories')
-      .select('id, name')
+      .select('id, name, description')
       .order('display_order');
 
     if (catError) throw catError;
