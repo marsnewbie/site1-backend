@@ -558,16 +558,13 @@ async function seedData() {
     // Insert opening hours
     console.log('Inserting opening hours...');
     const openingHours = [
-      { day_of_week: 1, open_time: '12:00', close_time: '15:00' }, // Monday lunch
-      { day_of_week: 1, open_time: '17:00', close_time: '23:00' }, // Monday dinner
+      { day_of_week: 0, open_time: '16:30', close_time: '22:00' }, // Sunday  
+      { day_of_week: 1, open_time: '16:30', close_time: '22:00' }, // Monday
       { day_of_week: 2, is_closed: true }, // Tuesday closed
-      { day_of_week: 3, open_time: '12:00', close_time: '15:00' }, // Wednesday lunch
-      { day_of_week: 3, open_time: '17:00', close_time: '23:00' }, // Wednesday dinner
-      { day_of_week: 4, open_time: '12:00', close_time: '15:00' }, // Thursday lunch
-      { day_of_week: 4, open_time: '17:00', close_time: '23:00' }, // Thursday dinner
-      { day_of_week: 5, open_time: '16:00', close_time: '00:00' }, // Friday
-      { day_of_week: 6, open_time: '16:00', close_time: '00:00' }, // Saturday
-      { day_of_week: 0, open_time: '16:00', close_time: '00:00' }  // Sunday
+      { day_of_week: 3, open_time: '16:30', close_time: '22:00' }, // Wednesday
+      { day_of_week: 4, open_time: '16:30', close_time: '22:00' }, // Thursday
+      { day_of_week: 5, open_time: '16:30', close_time: '22:00' }, // Friday
+      { day_of_week: 6, open_time: '16:30', close_time: '22:00' }  // Saturday
     ];
 
     const { error: hoursError } = await supabase
